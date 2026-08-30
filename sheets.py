@@ -16,15 +16,20 @@ credentials = Credentials.from_service_account_file(
 gc = gspread.authorize(credentials)
 
 
-def create_spreadsheet(project):
+# 여기에 네 Google Sheets ID를 넣어
+SPREADSHEET_ID = "여기에_스프레드시트_ID"
 
-    spreadsheet_name = "전력분석"
 
-    spreadsheet = gc.create(
-        spreadsheet_name
+def update_spreadsheet(project):
+
+    spreadsheet = gc.open_by_key(
+        SPREADSHEET_ID
     )
 
     worksheet = spreadsheet.sheet1
+
+    # 기존 데이터 삭제
+    worksheet.clear()
 
     headers = [
         "팀명",
@@ -36,7 +41,7 @@ def create_spreadsheet(project):
         "설명"
     ]
 
-    worksheet.append_row(headers)
+    rows = [headers]
 
     for team in project.get("teams", []):
 
@@ -53,7 +58,7 @@ def create_spreadsheet(project):
         if roster_size == 3:
             player4 = ""
 
-        row = [
+        rows.append([
             team.get("team_name", ""),
             f"{roster_size}인",
             team.get("player1", ""),
@@ -61,9 +66,12 @@ def create_spreadsheet(project):
             team.get("player3", ""),
             player4,
             team.get("description", "")
-        ]
+        ])
 
-        worksheet.append_row(row)
+    worksheet.update(
+        "A1",
+        rows
+    )
 
     worksheet.freeze(rows=1)
 
