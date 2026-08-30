@@ -2,13 +2,20 @@ import json
 import os
 import uuid
 
+
 DATA_DIR = "data"
 
-os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(
+    DATA_DIR,
+    exist_ok=True
+)
 
 
 def create_project():
-    project_id = str(uuid.uuid4())[:8]
+
+    project_id = str(
+        uuid.uuid4()
+    )[:8]
 
     project = {
         "id": project_id,
@@ -16,12 +23,17 @@ def create_project():
         "image_path": None
     }
 
-    save_project(project)
+    save_project(
+        project
+    )
 
     return project
 
 
-def save_project(project):
+def save_project(
+    project
+):
+
     path = os.path.join(
         DATA_DIR,
         f"{project['id']}.json"
@@ -41,14 +53,18 @@ def save_project(project):
         )
 
 
-def load_project(project_id):
+def load_project(
+    project_id
+):
 
     path = os.path.join(
         DATA_DIR,
         f"{project_id}.json"
     )
 
-    if not os.path.exists(path):
+    if not os.path.exists(
+        path
+    ):
         return None
 
     with open(
@@ -60,12 +76,19 @@ def load_project(project_id):
         return json.load(f)
 
 
-def delete_project(project_id):
+def delete_project(
+    project_id
+):
 
     path = os.path.join(
         DATA_DIR,
         f"{project_id}.json"
     )
 
-    if os.path.exists(path):
-        os.remove(path)
+    if os.path.exists(
+        path
+    ):
+
+        os.remove(
+            path
+        )
