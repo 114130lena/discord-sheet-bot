@@ -22,9 +22,17 @@ def create_project():
 
 
 def save_project(project):
-    path = os.path.join(DATA_DIR, f"{project['id']}.json")
+    path = os.path.join(
+        DATA_DIR,
+        f"{project['id']}.json"
+    )
 
-    with open(path, "w", encoding="utf-8") as f:
+    with open(
+        path,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
         json.dump(
             project,
             f,
@@ -34,17 +42,30 @@ def save_project(project):
 
 
 def load_project(project_id):
-    path = os.path.join(DATA_DIR, f"{project_id}.json")
+
+    path = os.path.join(
+        DATA_DIR,
+        f"{project_id}.json"
+    )
 
     if not os.path.exists(path):
         return None
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(
+        path,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
         return json.load(f)
 
 
 def delete_project(project_id):
-    path = os.path.join(DATA_DIR, f"{project_id}.json")
+
+    path = os.path.join(
+        DATA_DIR,
+        f"{project_id}.json"
+    )
 
     if os.path.exists(path):
         os.remove(path)
