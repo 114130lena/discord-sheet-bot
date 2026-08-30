@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from ai import analyze_images
-from data import create_project, save_project, delete_project, load_config, save_config, add_player, remove_player, get_player, search_players, add_team, remove_team, get_team, search_teams
+from data import create_project, save_project, delete_project, load_config, save_config, add_player, remove_player, get_player, search_players, add_team, remove_team, get_team, search_teams, auto_register_player, auto_register_team
 from sheets import update_spreadsheet
 from ui import ProjectView, project_embed
 
@@ -32,6 +32,7 @@ def save_project_to_sheet(project):
 
 def canonicalize_players(project):
     for team in project.get("teams", []):
+        team_name = str(team.get("team_name", "")).strip()
         for i in range(1, 5):
             name = str(team.get(f"player{i}", "")).strip()
             if not name or name == "[확인 필요]":
@@ -42,6 +43,8 @@ def canonicalize_players(project):
                 team[f"player{i}"] = exact.get("name", name)
             elif len(matches) == 1:
                 team[f"player{i}"] = matches[0].get("name", name)
+            else:
+                auto_register_player(name, team=team_name)
 
 
 def canonicalize_teams(project):
@@ -56,6 +59,8 @@ def canonicalize_teams(project):
                 team["team_name"] = known["name"]
             if known.get("tag"):
                 team["team_tag"] = known["tag"]
+        elif name or tag:
+            auto_register_team(name, tag=tag)
 
 
 async def run_analysis(channel, state):
@@ -75,11 +80,7 @@ async def run_analysis(channel, state):
         canonicalize_teams(project)
         canonicalize_players(project)
         current_projects[channel.id] = project
-        await status.edit(
-            content="📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘.",
-            embed=project_embed(project),
-            view=ProjectView(project, save_project_to_sheet),
-        )
+        await status.edit(content="📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘.", embed=project_embed(project), view=ProjectView(project, save_project_to_sheet))
         print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장")
     except asyncio.CancelledError:
         return
@@ -112,11 +113,7 @@ async def analysis_timeout(channel, state):
         else:
             analysis_waiting.pop(channel.id, None)
             status_message = state["status_message"]
-            await status_message.edit(
-                content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 `/전력분석`을 사용해줘!",
-                embed=None,
-                view=None,
-            )
+            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 `/전력분석`을 사용해줘!", embed=None, view=None)
             await asyncio.sleep(3)
             try:
                 await status_message.delete()
@@ -134,7 +131,6 @@ async def on_ready():
     print("=" * 50)
     try:
         for guild in bot.guilds:
-            # 전역으로 등록된 Slash Command를 각 서버에 복사한 뒤 즉시 동기화
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
             print(f"[{guild.name}] Slash Command {len(synced)}개 동기화 완료")
