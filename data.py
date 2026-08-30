@@ -5,6 +5,7 @@ import uuid
 DATA_DIR = "data"
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 PLAYERS_PATH = os.path.join(DATA_DIR, "players.json")
+TEAMS_PATH = os.path.join(DATA_DIR, "teams.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -77,10 +78,65 @@ def remove_player(name):
     return True
 
 
-def get_player(name):
-    return load_players().get(normalize_player_name(name))
+def get_player(name): return load_players().get(normalize_player_name(name))
 
 
 def search_players(query):
     q = normalize_player_name(query)
     return [p for p in load_players().values() if q in normalize_player_name(p.get("name", ""))]
+
+
+def load_teams():
+    if not os.path.exists(TEAMS_PATH): return {}
+    try:
+        with open(TEAMS_PATH, "r", encoding="utf-8") as f: return json.load(f)
+    except Exception: return {}
+
+
+def save_teams(teams):
+    with open(TEAMS_PATH, "w", encoding="utf-8") as f: json.dump(teams, f, ensure_ascii=False, indent=2)
+
+
+def normalize_team(value):
+    return " ".join(str(value).strip().lower().split())
+
+
+def add_team(name, tag="", notes=""):
+    name = str(name).strip()
+    tag = str(tag).strip()
+    if not name and not tag: return False
+    teams = load_teams()
+    key = normalize_team(name or tag)
+    teams[key] = {"name": name, "tag": tag, "notes": str(notes).strip()}
+    save_teams(teams)
+    return True
+
+
+def remove_team(value):
+    teams = load_teams()
+    key = normalize_team(value)
+    if key in teams:
+        del teams[key]
+        save_teams(teams)
+        return True
+    for k, team in list(teams.items()):
+        if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key:
+            del teams[k]
+            save_teams(teams)
+            return True
+    return False
+
+
+def get_team(value):
+    teams = load_teams()
+    key = normalize_team(value)
+    if key in teams: return teams[key]
+    for team in teams.values():
+        if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key:
+            return team
+    return None
+
+
+def search_teams(query):
+    q = normalize_team(query)
+    return [t for t in load_teams().values() if q in normalize_team(t.get("name", "")) or q in normalize_team(t.get("tag", ""))]
