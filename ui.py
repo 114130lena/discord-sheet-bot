@@ -137,5 +137,15 @@ class ProjectView(discord.ui.View):
             print(f"Google Sheets 저장 오류: {e}"); await interaction.edit_original_response(content=f"❌ **저장 실패:** `{type(e).__name__}`",embed=project_embed(self.project),view=self)
     @discord.ui.button(label="❌ 닫기",style=discord.ButtonStyle.danger)
     async def close_button(self,interaction,button):
-        for child in self.children: child.disabled=True
-        await interaction.response.edit_message(content="🛑 **전력분석 편집을 종료했습니다.**",view=self)
+        try:
+            await interaction.response.defer()
+            await interaction.message.delete()
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            try:
+                await interaction.response.edit_message(content="🛑 **전력분석 결과를 닫았습니다.**",view=None)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"결과 메시지 삭제 오류: {e}")
