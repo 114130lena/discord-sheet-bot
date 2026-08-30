@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import shutil
 from datetime import datetime
 
 DATA_DIR = "data"
@@ -63,28 +64,15 @@ def normalize_player_name(name):
 def add_player(name, tag="", team="", notes=""):
     name = str(name).strip()
     if not name: return False
-    players = load_players()
-    key = normalize_player_name(name)
-    existing = players.get(key, {})
-    history = existing.get("history", [])
-    players[key] = {
-        "name": name,
-        "tag": str(tag).strip() or existing.get("tag", ""),
-        "team": str(team).strip() or existing.get("team", ""),
-        "notes": str(notes).strip() or existing.get("notes", ""),
-        "history": history,
-    }
-    save_players(players)
-    return True
+    players = load_players(); key = normalize_player_name(name); existing = players.get(key, {})
+    players[key] = {"name": name, "tag": str(tag).strip() or existing.get("tag", ""), "team": str(team).strip() or existing.get("team", ""), "notes": str(notes).strip() or existing.get("notes", ""), "history": existing.get("history", [])}
+    save_players(players); return True
 
 
 def remove_player(name):
-    players = load_players()
-    key = normalize_player_name(name)
+    players = load_players(); key = normalize_player_name(name)
     if key not in players: return False
-    del players[key]
-    save_players(players)
-    return True
+    del players[key]; save_players(players); return True
 
 
 def get_player(name): return load_players().get(normalize_player_name(name))
@@ -96,33 +84,20 @@ def search_players(query):
 
 
 def update_player_team(name, new_team):
-    name = str(name).strip()
-    new_team = str(new_team).strip()
+    name = str(name).strip(); new_team = str(new_team).strip()
     if not name or not new_team: return {"status": "invalid", "name": name}
-    players = load_players()
-    key = normalize_player_name(name)
-    player = players.get(key)
+    players = load_players(); key = normalize_player_name(name); player = players.get(key)
     if not player:
-        add_player(name, team=new_team)
-        return {"status": "new", "name": name, "team": new_team}
-
+        add_player(name, team=new_team); return {"status": "new", "name": name, "team": new_team}
     old_team = str(player.get("team", "")).strip()
     if not old_team:
-        player["team"] = new_team
-        players[key] = player
-        save_players(players)
+        player["team"] = new_team; players[key] = player; save_players(players)
         return {"status": "set", "name": player.get("name", name), "old_team": "", "team": new_team}
-
     if normalize_team(old_team) == normalize_team(new_team):
         return {"status": "same", "name": player.get("name", name), "old_team": old_team, "team": new_team}
-
-    history = player.setdefault("history", [])
-    now = datetime.now().strftime("%Y-%m-%d")
-    if not any(normalize_team(h.get("team", "")) == normalize_team(old_team) and h.get("to") is None for h in history):
-        history.append({"team": old_team, "from": None, "to": now})
-    player["team"] = new_team
-    players[key] = player
-    save_players(players)
+    history = player.setdefault("history", []); now = datetime.now().strftime("%Y-%m-%d")
+    history.append({"team": old_team, "from": None, "to": now})
+    player["team"] = new_team; players[key] = player; save_players(players)
     return {"status": "changed", "name": player.get("name", name), "old_team": old_team, "team": new_team, "date": now}
 
 
@@ -142,38 +117,28 @@ def normalize_team(value):
 
 
 def add_team(name, tag="", notes=""):
-    name = str(name).strip()
-    tag = str(tag).strip()
+    name = str(name).strip(); tag = str(tag).strip()
     if not name and not tag: return False
-    teams = load_teams()
-    key = normalize_team(name or tag)
+    teams = load_teams(); key = normalize_team(name or tag)
     teams[key] = {"name": name, "tag": tag, "notes": str(notes).strip()}
-    save_teams(teams)
-    return True
+    save_teams(teams); return True
 
 
 def remove_team(value):
-    teams = load_teams()
-    key = normalize_team(value)
+    teams = load_teams(); key = normalize_team(value)
     if key in teams:
-        del teams[key]
-        save_teams(teams)
-        return True
+        del teams[key]; save_teams(teams); return True
     for k, team in list(teams.items()):
         if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key:
-            del teams[k]
-            save_teams(teams)
-            return True
+            del teams[k]; save_teams(teams); return True
     return False
 
 
 def get_team(value):
-    teams = load_teams()
-    key = normalize_team(value)
+    teams = load_teams(); key = normalize_team(value)
     if key in teams: return teams[key]
     for team in teams.values():
-        if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key:
-            return team
+        if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key: return team
     return None
 
 
@@ -184,14 +149,23 @@ def search_teams(query):
 
 def auto_register_player(name, team=""):
     name = str(name).strip()
-    if not name or name == "[확인 필요]": return False
-    if get_player(name): return False
+    if not name or name == "[확인 필요]" or get_player(name): return False
     return add_player(name, team=team)
 
 
 def auto_register_team(name, tag=""):
-    name = str(name).strip()
-    tag = str(tag).strip()
-    if not name and not tag: return False
-    if get_team(name or tag): return False
+    name = str(name).strip(); tag = str(tag).strip()
+    if not name and not tag or get_team(name or tag): return False
     return add_team(name, tag=tag)
+
+
+def backup_databases():
+    backup_dir = os.path.join(DATA_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backed = []
+    for path in (PLAYERS_PATH, TEAMS_PATH):
+        if os.path.exists(path):
+            dst = os.path.join(backup_dir, f"{os.path.basename(path)[:-5]}_{stamp}.json")
+            shutil.copy2(path, dst); backed.append(dst)
+    return backed
