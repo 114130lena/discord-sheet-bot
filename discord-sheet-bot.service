@@ -1,0 +1,16 @@
+[Unit]
+Description=Discord Sheet Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/discord-sheet-bot
+EnvironmentFile=/home/ubuntu/discord-sheet-bot/.env
+ExecStart=/home/ubuntu/discord-sheet-bot/venv/bin/python /home/ubuntu/discord-sheet-bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
