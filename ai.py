@@ -5,14 +5,20 @@ import json
 from dotenv import load_dotenv
 from google import genai
 
+
 load_dotenv()
+
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
 
-def analyze_image(image_data, mime_type):
+def analyze_image(
+    image_data,
+    mime_type
+):
+
     prompt = """
 이 이미지는 대회 팀 명단 표다.
 
@@ -28,6 +34,7 @@ def analyze_image(image_data, mime_type):
 - player4
 - description
 
+
 [로스터 인원 판별 규칙]
 
 1. 이미지에서 해당 팀에 실제로 등록된 선수의 수를 센다.
@@ -38,11 +45,8 @@ def analyze_image(image_data, mime_type):
 6. 선수 이름을 읽을 수 없는 것과 선수가 존재하지 않는 것은 구분한다.
 7. 명단에 선수 3명만 존재한다면 3인 로스터로 판단한다.
 8. roster_size는 반드시 숫자 3 또는 4만 사용한다.
-
-[중요]
-
-표의 다른 정보나 예비 선수, 코치, 매니저 등은 선수로 세지 않는다.
-실제 경기 로스터에 등록된 선수만 선수1~4에 넣는다.
+9. 예비 선수, 코치, 매니저 등은 선수로 세지 않는다.
+10. 실제 경기 로스터에 등록된 선수만 player1~player4에 넣는다.
 
 읽을 수 없는 선수 이름은 "[확인 필요]"라고 표시한다.
 
@@ -67,7 +71,9 @@ def analyze_image(image_data, mime_type):
 이미지에 존재하는 모든 팀을 출력한다.
 """
 
-    encoded = base64.b64encode(image_data).decode("utf-8")
+    encoded = base64.b64encode(
+        image_data
+    ).decode("utf-8")
 
     response = client.models.generate_content(
         model="gemini-3.5-flash-lite",
@@ -85,19 +91,34 @@ def analyze_image(image_data, mime_type):
     text = response.text.strip()
 
     if text.startswith("```"):
-        text = text.replace("```json", "")
-        text = text.replace("```", "")
+
+        text = text.replace(
+            "```json",
+            ""
+        )
+
+        text = text.replace(
+            "```",
+            ""
+        )
+
         text = text.strip()
 
     result = json.loads(text)
 
-    # AI가 이상한 값을 넣었을 경우 안전하게 정리
-    for team in result.get("teams", []):
+    for team in result.get(
+        "teams",
+        []
+    ):
 
-        if team.get("roster_size") not in [3, 4]:
+        if team.get(
+            "roster_size"
+        ) not in [3, 4]:
+
             team["roster_size"] = 4
 
         if team["roster_size"] == 3:
+
             team["player4"] = ""
 
         for key in [
@@ -108,7 +129,9 @@ def analyze_image(image_data, mime_type):
             "player4",
             "description"
         ]:
+
             if key not in team:
+
                 team[key] = ""
 
     return result
