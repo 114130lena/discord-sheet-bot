@@ -1,6 +1,6 @@
 discord.py
 python-dotenv
+google-genai
+Pillow
 gspread
 google-auth
-Pillow
-google-genai
