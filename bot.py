@@ -28,9 +28,16 @@ async def on_ready():
 
     try:
         synced = await bot.tree.sync()
-        print(f"Slash Command {len(synced)}개 동기화 완료")
+
+        print(
+            f"Slash Command {len(synced)}개 동기화 완료"
+        )
+
     except Exception as e:
-        print(f"동기화 오류: {e}")
+
+        print(
+            f"동기화 오류: {e}"
+        )
 
 
 @bot.tree.command(
@@ -57,7 +64,9 @@ async def on_message(message):
         if not attachment.content_type:
             continue
 
-        if not attachment.content_type.startswith("image/"):
+        if not attachment.content_type.startswith(
+            "image/"
+        ):
             continue
 
         await message.channel.send(
@@ -80,12 +89,19 @@ async def on_message(message):
                 []
             )
 
-            save_project(project)
+            save_project(
+                project
+            )
 
-            embed = project_embed(project)
+            embed = project_embed(
+                project
+            )
 
             await message.channel.send(
-                content="📋 **분석 결과를 확인해주세요!**",
+                content=(
+                    "📋 **분석 결과를 확인해주세요!**\n"
+                    "AI가 판단한 로스터 인원도 확인해주세요."
+                ),
                 embed=embed,
                 view=ProjectView(
                     project,
@@ -95,14 +111,18 @@ async def on_message(message):
 
         except Exception as e:
 
-            print(f"분석 오류: {e}")
+            print(
+                f"분석 오류: {e}"
+            )
 
             await message.channel.send(
-                f"❌ 분석 중 오류가 발생했어.\n"
+                "❌ 분석 중 오류가 발생했어.\n"
                 f"```text\n{e}\n```"
             )
 
-    await bot.process_commands(message)
+    await bot.process_commands(
+        message
+    )
 
 
 bot.run(TOKEN)
