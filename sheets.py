@@ -3,7 +3,7 @@ from google.oauth2.service_account import Credentials
 
 
 # =========================================================
-# Google API 설정
+# Google API
 # =========================================================
 
 SCOPES = [
@@ -27,107 +27,121 @@ SPREADSHEET_ID = "1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M"
 
 
 # =========================================================
-# Worksheet 가져오기 / 없으면 생성
+# Worksheet
 # =========================================================
 
-def get_or_create_worksheet(
-    spreadsheet,
-    title,
-    rows=200,
-    cols=12
-):
+def get_or_create_worksheet(spreadsheet):
 
     try:
-        return spreadsheet.worksheet(title)
+        return spreadsheet.worksheet("전력분석")
 
     except gspread.WorksheetNotFound:
 
         return spreadsheet.add_worksheet(
-            title=title,
-            rows=rows,
-            cols=cols
+            title="전력분석",
+            rows=200,
+            cols=12
         )
 
 
 # =========================================================
-# 전력분석 시트
+# Google Sheets 업데이트
 # =========================================================
 
 def update_spreadsheet(project):
 
-    spreadsheet = gc.open_by_key(
-        SPREADSHEET_ID
-    )
+    spreadsheet = gc.open_by_key(SPREADSHEET_ID)
 
     worksheet = get_or_create_worksheet(
-        spreadsheet,
-        "전력분석",
-        rows=200,
-        cols=12
+        spreadsheet
     )
 
-    # =====================================================
-    # 기존 내용 삭제
-    # =====================================================
+    sheet_id = worksheet.id
 
-    worksheet.clear()
+    teams = project.get("teams", [])
 
     # =====================================================
-    # 기존 병합 제거
+    # 1. 기존 내용 초기화
     # =====================================================
 
-    try:
-        worksheet.batch_update({
-            "requests": [
-                {
-                    "unmergeCells": {
-                        "range": {
-                            "sheetId": worksheet.id,
-                            "startRowIndex": 0,
-                            "endRowIndex": 200,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 12
-                        }
-                    }
-                }
-            ]
-        })
+    requests = [
 
-    except Exception:
-        pass
-
-    teams = project.get(
-        "teams",
-        []
-    )
-
-    # =====================================================
-    # 제목
-    # =====================================================
-
-    worksheet.merge_cells("A1:I1")
-
-    worksheet.update(
-        range_name="A1",
-        values=[
-            ["2026 전력분석"]
-        ]
-    )
-
-    worksheet.format(
-        "A1:I1",
         {
-            "textFormat": {
-                "bold": True,
-                "fontSize": 16
-            },
-            "horizontalAlignment": "LEFT",
-            "verticalAlignment": "MIDDLE"
+            "updateCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 200,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 12
+                },
+                "fields": "userEnteredValue,userEnteredFormat"
+            }
+        },
+
+        # 기존 병합 제거
+        {
+            "unmergeCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 200,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 12
+                }
+            }
         }
-    )
+    ]
 
     # =====================================================
-    # 헤더
+    # 2. 제목
+    # =====================================================
+
+    requests.append({
+        "mergeCells": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": 0,
+                "endRowIndex": 1,
+                "startColumnIndex": 0,
+                "endColumnIndex": 9
+            },
+            "mergeType": "MERGE_ALL"
+        }
+    })
+
+    requests.append({
+        "updateCells": {
+            "rows": [
+                {
+                    "values": [
+                        {
+                            "userEnteredValue": {
+                                "stringValue": "2026 전력분석"
+                            },
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "bold": True,
+                                    "fontSize": 16
+                                },
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "start": {
+                "sheetId": sheet_id,
+                "rowIndex": 0,
+                "columnIndex": 0
+            },
+            "fields": "userEnteredValue,userEnteredFormat"
+        }
+    })
+
+    # =====================================================
+    # 3. 헤더
     # =====================================================
 
     headers = [
@@ -137,47 +151,87 @@ def update_spreadsheet(project):
         "운영 전략 / 교전 포인트"
     ]
 
-    worksheet.update(
-        range_name="A2:D2",
-        values=[headers]
-    )
+    # 왼쪽 헤더
+    requests.append({
+        "updateCells": {
+            "rows": [
+                {
+                    "values": [
+                        {
+                            "userEnteredValue": {
+                                "stringValue": value
+                            },
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "bold": True,
+                                    "fontSize": 11
+                                },
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "wrapStrategy": "WRAP"
+                            }
+                        }
+                        for value in headers
+                    ]
+                }
+            ],
+            "start": {
+                "sheetId": sheet_id,
+                "rowIndex": 1,
+                "columnIndex": 0
+            },
+            "fields": "userEnteredValue,userEnteredFormat"
+        }
+    })
 
-    worksheet.update(
-        range_name="F2:I2",
-        values=[headers]
-    )
-
-    header_format = {
-        "textFormat": {
-            "bold": True,
-            "fontSize": 11
-        },
-        "horizontalAlignment": "CENTER",
-        "verticalAlignment": "MIDDLE",
-        "wrapStrategy": "WRAP"
-    }
-
-    worksheet.format(
-        "A2:D2",
-        header_format
-    )
-
-    worksheet.format(
-        "F2:I2",
-        header_format
-    )
+    # 오른쪽 헤더
+    requests.append({
+        "updateCells": {
+            "rows": [
+                {
+                    "values": [
+                        {
+                            "userEnteredValue": {
+                                "stringValue": value
+                            },
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "bold": True,
+                                    "fontSize": 11
+                                },
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "wrapStrategy": "WRAP"
+                            }
+                        }
+                        for value in headers
+                    ]
+                }
+            ],
+            "start": {
+                "sheetId": sheet_id,
+                "rowIndex": 1,
+                "columnIndex": 5
+            },
+            "fields": "userEnteredValue,userEnteredFormat"
+        }
+    })
 
     # =====================================================
-    # 팀 작성
+    # 4. 팀 데이터 생성
     # =====================================================
 
-    def write_team(
+    left_teams = teams[0::2]
+    right_teams = teams[1::2]
+
+    # -----------------------------------------------------
+    # 팀 하나를 requests에 추가
+    # -----------------------------------------------------
+
+    def add_team(
         team,
         start_row,
-        team_column,
-        player_column,
-        experiment_column,
-        analysis_column
+        start_col
     ):
 
         team_name = team.get(
@@ -191,7 +245,7 @@ def update_spreadsheet(project):
         )
 
         # ---------------------------------------------
-        # 팀명 / 약칭
+        # 팀명 + 약칭
         # ---------------------------------------------
 
         if team_name and team_tag:
@@ -242,220 +296,215 @@ def update_spreadsheet(project):
             players[3] = ""
 
         # ---------------------------------------------
-        # 팀명 영역
+        # 팀명 셀 병합
         # ---------------------------------------------
 
-        end_row = start_row + 3
-
-        worksheet.merge_cells(
-            f"{team_column}{start_row}:"
-            f"{team_column}{end_row}"
-        )
-
-        worksheet.update(
-            range_name=f"{team_column}{start_row}",
-            values=[
-                [display_name]
-            ]
-        )
-
-        # ---------------------------------------------
-        # 선수 영역
-        # ---------------------------------------------
-
-        for i in range(4):
-
-            row = start_row + i
-
-            player = players[i]
-
-            # 실험체는 항상 빈칸
-            experiment = ""
-
-            # 분석 역시 현재 빈칸
-            analysis = ""
-
-            worksheet.update(
-                range_name=(
-                    f"{player_column}{row}:"
-                    f"{analysis_column}{row}"
-                ),
-                values=[
-                    [
-                        player,
-                        experiment,
-                        analysis
-                    ]
-                ]
-            )
-
-        # ---------------------------------------------
-        # 팀명 서식
-        # ---------------------------------------------
-
-        worksheet.format(
-            f"{team_column}{start_row}:"
-            f"{team_column}{end_row}",
-            {
-                "textFormat": {
-                    "bold": True,
-                    "fontSize": 11
+        requests.append({
+            "mergeCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": start_row + 4,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": start_col + 1
                 },
-                "horizontalAlignment": "CENTER",
-                "verticalAlignment": "MIDDLE",
-                "wrapStrategy": "WRAP"
+                "mergeType": "MERGE_ALL"
             }
-        )
+        })
 
         # ---------------------------------------------
-        # 선수 / 실험체
+        # 팀명
         # ---------------------------------------------
 
-        worksheet.format(
-            f"{player_column}{start_row}:"
-            f"{experiment_column}{end_row}",
-            {
-                "horizontalAlignment": "CENTER",
-                "verticalAlignment": "MIDDLE",
-                "wrapStrategy": "WRAP"
+        requests.append({
+            "updateCells": {
+                "rows": [
+                    {
+                        "values": [
+                            {
+                                "userEnteredValue": {
+                                    "stringValue": display_name
+                                },
+                                "userEnteredFormat": {
+                                    "textFormat": {
+                                        "bold": True,
+                                        "fontSize": 11
+                                    },
+                                    "horizontalAlignment": "CENTER",
+                                    "verticalAlignment": "MIDDLE",
+                                    "wrapStrategy": "WRAP"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": start_row,
+                    "columnIndex": start_col
+                },
+                "fields": "userEnteredValue,userEnteredFormat"
             }
-        )
+        })
 
         # ---------------------------------------------
-        # 분석
+        # 선수 4명
         # ---------------------------------------------
 
-        worksheet.format(
-            f"{analysis_column}{start_row}:"
-            f"{analysis_column}{end_row}",
-            {
-                "horizontalAlignment": "LEFT",
-                "verticalAlignment": "MIDDLE",
-                "wrapStrategy": "WRAP"
+        rows = []
+
+        for player in players:
+
+            rows.append({
+                "values": [
+
+                    {
+                        "userEnteredValue": {
+                            "stringValue": player
+                        },
+                        "userEnteredFormat": {
+                            "horizontalAlignment": "CENTER",
+                            "verticalAlignment": "MIDDLE"
+                        }
+                    },
+
+                    {
+                        "userEnteredValue": {
+                            "stringValue": ""
+                        }
+                    },
+
+                    {
+                        "userEnteredValue": {
+                            "stringValue": ""
+                        },
+                        "userEnteredFormat": {
+                            "wrapStrategy": "WRAP",
+                            "verticalAlignment": "MIDDLE"
+                        }
+                    }
+                ]
+            })
+
+        requests.append({
+            "updateCells": {
+                "rows": rows,
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": start_row,
+                    "columnIndex": start_col + 1
+                },
+                "fields": "userEnteredValue,userEnteredFormat"
             }
-        )
+        })
+
+        # ---------------------------------------------
+        # 행 높이
+        # ---------------------------------------------
+
+        requests.append({
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "ROWS",
+                    "startIndex": start_row,
+                    "endIndex": start_row + 4
+                },
+                "properties": {
+                    "pixelSize": 35
+                },
+                "fields": "pixelSize"
+            }
+        })
 
     # =====================================================
-    # 좌 / 우 배치
+    # 5. 왼쪽 팀
     # =====================================================
 
-    left_teams = teams[0::2]
-    right_teams = teams[1::2]
-
-    # =====================================================
-    # 왼쪽 팀
-    # =====================================================
-
-    current_row = 3
+    row = 2
 
     for team in left_teams:
 
-        write_team(
+        add_team(
             team,
-            current_row,
-            "A",
-            "B",
-            "C",
-            "D"
+            row,
+            0
         )
 
-        current_row += 4
+        row += 4
 
     # =====================================================
-    # 오른쪽 팀
+    # 6. 오른쪽 팀
     # =====================================================
 
-    current_row = 3
+    row = 2
 
     for team in right_teams:
 
-        write_team(
+        add_team(
             team,
-            current_row,
-            "F",
-            "G",
-            "H",
-            "I"
+            row,
+            5
         )
 
-        current_row += 4
+        row += 4
 
     # =====================================================
-    # 열 너비
+    # 7. 열 너비
     # =====================================================
 
     column_widths = {
-        "A": 170,
-        "B": 120,
-        "C": 110,
-        "D": 320,
-
-        "E": 25,
-
-        "F": 170,
-        "G": 120,
-        "H": 110,
-        "I": 320
+        0: 170,   # A 팀
+        1: 120,   # B 선수
+        2: 110,   # C 실험체
+        3: 320,   # D 전략
+        4: 25,    # E 여백
+        5: 170,   # F 팀
+        6: 120,   # G 선수
+        7: 110,   # H 실험체
+        8: 320    # I 전략
     }
 
     for column, width in column_widths.items():
 
-        worksheet.format(
-            f"{column}:{column}",
-            {
-                "columnWidth": width
+        requests.append({
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "startIndex": column,
+                    "endIndex": column + 1
+                },
+                "properties": {
+                    "pixelSize": width
+                },
+                "fields": "pixelSize"
             }
-        )
+        })
 
     # =====================================================
-    # 테두리
+    # 8. 헤더 고정
     # =====================================================
 
-    last_row = max(
-        current_row,
-        7
-    )
-
-    border_format = {
-        "borders": {
-            "top": {
-                "style": "SOLID"
+    requests.append({
+        "updateSheetProperties": {
+            "properties": {
+                "sheetId": sheet_id,
+                "gridProperties": {
+                    "frozenRowCount": 2
+                }
             },
-            "bottom": {
-                "style": "SOLID"
-            },
-            "left": {
-                "style": "SOLID"
-            },
-            "right": {
-                "style": "SOLID"
-            },
-            "innerHorizontal": {
-                "style": "SOLID"
-            },
-            "innerVertical": {
-                "style": "SOLID"
-            }
+            "fields": "gridProperties.frozenRowCount"
         }
-    }
-
-    worksheet.format(
-        f"A2:D{last_row}",
-        border_format
-    )
-
-    worksheet.format(
-        f"F2:I{last_row}",
-        border_format
-    )
+    })
 
     # =====================================================
-    # 헤더 고정
+    # 9. 한 번에 Google Sheets로 전송
     # =====================================================
 
-    worksheet.freeze(
-        rows=2
-    )
+    spreadsheet.batch_update({
+        "requests": requests
+    })
 
     print(
         f"Google Sheets 업데이트 완료: "
