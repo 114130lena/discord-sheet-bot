@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from datetime import datetime
 
 DATA_DIR = "data"
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -64,7 +65,15 @@ def add_player(name, tag="", team="", notes=""):
     if not name: return False
     players = load_players()
     key = normalize_player_name(name)
-    players[key] = {"name": name, "tag": str(tag).strip(), "team": str(team).strip(), "notes": str(notes).strip()}
+    existing = players.get(key, {})
+    history = existing.get("history", [])
+    players[key] = {
+        "name": name,
+        "tag": str(tag).strip() or existing.get("tag", ""),
+        "team": str(team).strip() or existing.get("team", ""),
+        "notes": str(notes).strip() or existing.get("notes", ""),
+        "history": history,
+    }
     save_players(players)
     return True
 
@@ -84,6 +93,37 @@ def get_player(name): return load_players().get(normalize_player_name(name))
 def search_players(query):
     q = normalize_player_name(query)
     return [p for p in load_players().values() if q in normalize_player_name(p.get("name", ""))]
+
+
+def update_player_team(name, new_team):
+    name = str(name).strip()
+    new_team = str(new_team).strip()
+    if not name or not new_team: return {"status": "invalid"}
+    players = load_players()
+    key = normalize_player_name(name)
+    player = players.get(key)
+    if not player:
+        add_player(name, team=new_team)
+        return {"status": "new", "team": new_team}
+
+    old_team = str(player.get("team", "")).strip()
+    if not old_team:
+        player["team"] = new_team
+        players[key] = player
+        save_players(players)
+        return {"status": "set", "old_team": "", "team": new_team}
+
+    if normalize_team(old_team) == normalize_team(new_team):
+        return {"status": "same", "old_team": old_team, "team": new_team}
+
+    history = player.setdefault("history", [])
+    now = datetime.now().strftime("%Y-%m-%d")
+    if not any(normalize_team(h.get("team", "")) == normalize_team(old_team) and h.get("to") is None for h in history):
+        history.append({"team": old_team, "from": None, "to": now})
+    player["team"] = new_team
+    players[key] = player
+    save_players(players)
+    return {"status": "changed", "old_team": old_team, "team": new_team, "date": now}
 
 
 def load_teams():
