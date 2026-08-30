@@ -15,7 +15,6 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 config = load_config()
@@ -30,31 +29,28 @@ def persist_channels():
 
 
 def save_project_to_sheet(project):
-    # Sheets 저장이 성공한 뒤 로컬 JSON도 저장한다.
     url = update_spreadsheet(project)
     save_project(project)
     return url
 
 
-async def finish_analysis(channel, state):
+async def run_analysis(channel, state):
     channel_id = channel.id
+    if analysis_waiting.get(channel_id) is not state:
+        return
+    status = state["status_message"]
     try:
-        await asyncio.sleep(2)
-        if analysis_waiting.get(channel_id) is not state:
-            return
-
         analysis_waiting.pop(channel_id, None)
-        state["timer_task"].cancel()
+        timer = state.get("timer_task")
+        if timer and timer is not asyncio.current_task():
+            timer.cancel()
 
-        status = state["status_message"]
         await status.edit(content="🔍 **사진을 분석하고 있어...**\n잠깐만 기다려줘!", embed=None, view=None)
-
-        images = state["images"]
+        images = list(state["images"])
         result = await asyncio.to_thread(analyze_images, images)
 
         project = create_project()
         project["teams"] = result.get("teams", [])
-        project["image_path"] = None
         current_projects[channel_id] = project
 
         await status.edit(
@@ -63,7 +59,6 @@ async def finish_analysis(channel, state):
             view=ProjectView(project, save_project_to_sheet),
         )
         print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장")
-
     except asyncio.CancelledError:
         return
     except Exception as e:
@@ -73,9 +68,17 @@ async def finish_analysis(channel, state):
         print(repr(e))
         print("=" * 50)
         try:
-            await state["status_message"].edit(content=f"❌ **분석 중 오류가 발생했어.**\n`{type(e).__name__}: {e}`", embed=None, view=None)
+            await status.edit(content=f"❌ **분석 중 오류가 발생했어.**\n`{type(e).__name__}: {e}`", embed=None, view=None)
         except Exception:
             pass
+
+
+async def debounce_analysis(channel, state):
+    try:
+        await asyncio.sleep(2)
+        await run_analysis(channel, state)
+    except asyncio.CancelledError:
+        return
 
 
 async def analysis_timeout(channel, state):
@@ -83,13 +86,13 @@ async def analysis_timeout(channel, state):
         await asyncio.sleep(30)
         if analysis_waiting.get(channel.id) is not state:
             return
-        analysis_waiting.pop(channel.id, None)
         if state.get("debounce_task"):
             state["debounce_task"].cancel()
         if state["images"]:
-            await finish_analysis(channel, state)
-            return
-        await state["status_message"].edit(content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 분석하려면 `/전력분석`을 사용해줘!", embed=None, view=None)
+            await run_analysis(channel, state)
+        else:
+            analysis_waiting.pop(channel.id, None)
+            await state["status_message"].edit(content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 분석하려면 `/전력분석`을 사용해줘!", embed=None, view=None)
     except asyncio.CancelledError:
         return
 
@@ -167,7 +170,6 @@ async def reset_analysis(interaction: discord.Interaction):
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-
     state = analysis_waiting.get(message.channel.id)
     if state is None:
         await bot.process_commands(message)
@@ -187,10 +189,9 @@ async def on_message(message: discord.Message):
 
     count = len(state["images"])
     await state["status_message"].edit(content=f"📷 **사진 {count}장 받았어!**\n잠시 더 받을게. 여러 장이면 계속 올려줘.\n🔍 곧 분석을 시작해.")
-
     if state.get("debounce_task"):
         state["debounce_task"].cancel()
-    state["debounce_task"] = asyncio.create_task(finish_analysis(message.channel, state))
+    state["debounce_task"] = asyncio.create_task(debounce_analysis(message.channel, state))
     await bot.process_commands(message)
 
 
@@ -198,30 +199,24 @@ async def on_message(message: discord.Message):
 async def set_analysis_channel_error(interaction, error):
     if isinstance(error, discord.app_commands.errors.MissingPermissions):
         await interaction.response.send_message("❌ 이 명령어는 **서버 관리** 권한이 필요해!", ephemeral=True)
-    else:
-        print(f"분석채널설정 오류: {error}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
+    elif not interaction.response.is_done():
+        await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
 
 
 @unset_analysis_channel.error
 async def unset_analysis_channel_error(interaction, error):
     if isinstance(error, discord.app_commands.errors.MissingPermissions):
         await interaction.response.send_message("❌ 이 명령어는 **서버 관리** 권한이 필요해!", ephemeral=True)
-    else:
-        print(f"분석채널해제 오류: {error}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
+    elif not interaction.response.is_done():
+        await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
 
 
 @reset_analysis.error
 async def reset_analysis_error(interaction, error):
     if isinstance(error, discord.app_commands.errors.MissingPermissions):
         await interaction.response.send_message("❌ 이 명령어는 **서버 관리** 권한이 필요해!", ephemeral=True)
-    else:
-        print(f"전력분석초기화 오류: {error}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
+    elif not interaction.response.is_done():
+        await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
 
 
 if not TOKEN:
