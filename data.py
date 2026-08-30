@@ -227,13 +227,17 @@ def auto_register_team(name, tag=""):
     return add_team(name, tag=tag)
 
 
-def backup_databases():
+def backup_databases(keep=30):
     backup_dir = os.path.join(DATA_DIR, "backups")
     os.makedirs(backup_dir, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     backed = []
     for path in (PLAYERS_PATH, TEAMS_PATH):
         if os.path.exists(path):
             dst = os.path.join(backup_dir, f"{os.path.basename(path)[:-5]}_{stamp}.json")
             shutil.copy2(path, dst); backed.append(dst)
+    files = sorted((os.path.join(backup_dir, f) for f in os.listdir(backup_dir) if f.endswith(".json")), key=os.path.getmtime, reverse=True)
+    for old in files[keep * 2:]:
+        try: os.remove(old)
+        except OSError: pass
     return backed
