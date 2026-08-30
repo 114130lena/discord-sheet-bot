@@ -8,12 +8,19 @@ from ai import analyze_image
 from data import create_project, save_project
 from ui import ProjectView, project_embed
 
+
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+
+TOKEN = os.getenv(
+    "DISCORD_TOKEN"
+)
+
 
 intents = discord.Intents.default()
+
 intents.message_content = True
+
 
 bot = commands.Bot(
     command_prefix="!",
@@ -24,13 +31,17 @@ bot = commands.Bot(
 @bot.event
 async def on_ready():
 
-    print(f"로그인 완료: {bot.user}")
+    print(
+        f"로그인 완료: {bot.user}"
+    )
 
     try:
+
         synced = await bot.tree.sync()
 
         print(
-            f"Slash Command {len(synced)}개 동기화 완료"
+            f"Slash Command "
+            f"{len(synced)}개 동기화 완료"
         )
 
     except Exception as e:
@@ -54,7 +65,9 @@ async def create_sheet(
 
 
 @bot.event
-async def on_message(message):
+async def on_message(
+    message
+):
 
     if message.author.bot:
         return
@@ -125,4 +138,6 @@ async def on_message(message):
     )
 
 
-bot.run(TOKEN)
+bot.run(
+    TOKEN
+)
