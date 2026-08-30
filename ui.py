@@ -1,6 +1,6 @@
 import discord
 
-from sheets import create_spreadsheet
+from sheets import update_spreadsheet
 
 
 def team_text(
