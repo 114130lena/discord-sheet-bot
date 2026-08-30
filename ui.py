@@ -1,6 +1,6 @@
 import discord
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M/edit"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M/edit?usp=sharing"
 
 
 def project_embed(project):
@@ -134,7 +134,7 @@ class ProjectView(discord.ui.View):
             url = await result if hasattr(result,"__await__") else result
             await interaction.edit_original_response(content="✅ **Google Sheets 저장 완료.**\n아래 버튼으로 시트를 열 수 있습니다.",embed=project_embed(self.project),view=self)
         except Exception as e:
-            print(f"Google Sheets 저장 오류: {e}"); await interaction.edit_original_response(content=f"❌ **저장 실패:** `{type(e).__name__}`",embed=project_embed(self.project),view=self)
+            print(f"Google Sheets 저장 오류: {e}"); await interaction.edit_original_response(content=f"❌ **저장 실패:** `{type(e).__name__}`",embed=project_embed(self.project),view=self
     @discord.ui.button(label="❌ 닫기",style=discord.ButtonStyle.danger)
     async def close_button(self,interaction,button):
         try:
