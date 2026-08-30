@@ -98,23 +98,23 @@ def search_players(query):
 def update_player_team(name, new_team):
     name = str(name).strip()
     new_team = str(new_team).strip()
-    if not name or not new_team: return {"status": "invalid"}
+    if not name or not new_team: return {"status": "invalid", "name": name}
     players = load_players()
     key = normalize_player_name(name)
     player = players.get(key)
     if not player:
         add_player(name, team=new_team)
-        return {"status": "new", "team": new_team}
+        return {"status": "new", "name": name, "team": new_team}
 
     old_team = str(player.get("team", "")).strip()
     if not old_team:
         player["team"] = new_team
         players[key] = player
         save_players(players)
-        return {"status": "set", "old_team": "", "team": new_team}
+        return {"status": "set", "name": player.get("name", name), "old_team": "", "team": new_team}
 
     if normalize_team(old_team) == normalize_team(new_team):
-        return {"status": "same", "old_team": old_team, "team": new_team}
+        return {"status": "same", "name": player.get("name", name), "old_team": old_team, "team": new_team}
 
     history = player.setdefault("history", [])
     now = datetime.now().strftime("%Y-%m-%d")
@@ -123,7 +123,7 @@ def update_player_team(name, new_team):
     player["team"] = new_team
     players[key] = player
     save_players(players)
-    return {"status": "changed", "old_team": old_team, "team": new_team, "date": now}
+    return {"status": "changed", "name": player.get("name", name), "old_team": old_team, "team": new_team, "date": now}
 
 
 def load_teams():
