@@ -1,230 +1,121 @@
 import os
 import json
 import re
-
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-
 load_dotenv()
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY가 설정되어 있지 않아!")
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL = "gemini-3.5-flash-lite"
 
+PROMPT = r'''
+너는 이터널리턴 대회 로스터 표에서 데이터를 추출하는 AI다.
+여러 이미지가 들어오면 같은 표의 이어지는 부분일 수 있으므로 전체 이미지를 함께 보고 중복 팀은 합치되, 서로 다른 팀은 모두 추출한다.
 
-# =========================================================
-# 이미지 분석
-# =========================================================
+반드시 추출할 것:
+- team_name: 팀의 정식 팀명. 이미지에 실제로 적힌 값만.
+- team_tag: 팀의 약칭/태그. team_name과 분리해서 읽는다. 약칭이 없으면 "".
+- player1~player4: 실제 선수 이름. 이미지에 보이는 순서를 유지한다.
+- roster_size: 실제 선수 수. 3명 또는 4명.
 
-def analyze_image(image_data, mime_type):
+절대로 추측하지 말 것:
+- 실험체
+- 전략
+- 교전 포인트
+- 대회명/날짜/순위 등을 팀명으로 오인
+- 보이지 않는 약칭이나 선수명 생성
 
-    prompt = """
-너는 이터널리턴 대회 로스터 표를 읽는 데이터 추출 AI다.
+실험체와 전략 관련 필드는 항상 빈 문자열.
+3인 로스터면 player4도 빈 문자열.
+코치/감독/매니저/스태프는 선수로 넣지 않는다.
+읽을 수 없는 선수명은 "[확인 필요]".
 
-이번 작업의 목적은 이미지에서 다음 정보만 정확하게 추출하는 것이다.
-
-1. 팀의 정식 팀명
-2. 팀 약칭
-3. 선수 이름
-4. 실제 로스터 인원
-
-그 외의 정보는 절대로 추측하거나 생성하지 않는다.
-
-
-==================================================
-[매우 중요] 팀명과 약칭 구분
-==================================================
-
-team_name:
-팀의 정식 이름이다.
-
-team_tag:
-팀의 짧은 약칭 또는 태그다.
-
-예시:
-
-팀명: DTS ITENSION
-약칭: DTS
-
-팀명과 약칭이 이미지에서 별도로 표시되어 있다면
-각각 정확히 분리한다.
-
-팀명과 약칭을 하나의 문자열로 합치지 않는다.
-
-약칭이 보이지 않는다면:
-team_tag = ""
-
-팀명이 보이지 않는다면:
-team_name = ""
-
-AI가 약칭을 임의로 만들어내지 않는다.
-
-
-==================================================
-[선수]
-==================================================
-
-각 팀에 실제로 소속되어 있는 선수만 추출한다.
-
-선수 이름은 이미지에 표시된 그대로 작성한다.
-
-대소문자도 가능한 한 이미지와 동일하게 유지한다.
-
-선수 순서는 이미지에 표시된 순서를 유지한다.
-
-읽을 수 없는 이름은 추측하지 않는다.
-
-읽을 수 없는 경우:
-"[확인 필요]"
-
-
-==================================================
-[3인 / 4인 로스터]
-==================================================
-
-실제로 확인되는 선수 숫자를 센다.
-
-3명이면:
-roster_size = 3
-
-4명이면:
-roster_size = 4
-
-3인 로스터에서는 player4를 반드시 빈 문자열로 한다.
-
-코치, 감독, 매니저, 스태프 등은 선수로 포함하지 않는다.
-
-
-==================================================
-[실험체]
-==================================================
-
-실험체는 절대로 분석하지 않는다.
-
-이미지에 실험체 이름이 있어도 무시한다.
-
-experiment1
-experiment2
-experiment3
-experiment4
-
-모두 반드시 빈 문자열("")로 출력한다.
-
-
-==================================================
-[전략 / 교전 포인트]
-==================================================
-
-운영 전략이나 교전 포인트를 이미지에서 읽지 않는다.
-
-AI가 직접 작성하지도 않는다.
-
-다음 값은 항상 빈 문자열이다.
-
-strategy = ""
-
-combat_points = ""
-
-
-==================================================
-[제목 / 기타 텍스트]
-==================================================
-
-대회명, 날짜, 제목, 순위, 설명문, 장식용 텍스트 등은
-팀명으로 착각하지 않는다.
-
-팀 데이터에 포함하지 않는다.
-
-
-==================================================
-[출력]
-==================================================
-
-반드시 아래 JSON 형식으로 출력한다.
-
+반드시 JSON만 출력한다.
 {
   "teams": [
     {
       "team_name": "",
       "team_tag": "",
       "roster_size": 3,
-
       "player1": "",
       "player2": "",
       "player3": "",
       "player4": "",
-
       "experiment1": "",
       "experiment2": "",
       "experiment3": "",
       "experiment4": "",
-
       "strategy": "",
-      "combat_points": ""
+      "combat_points": "",
+      "notes": ""
     }
   ]
 }
+'''
 
-반드시 JSON만 출력한다.
 
-마크다운 코드블록을 사용하지 않는다.
+def _clean_json(text):
+    text = text.strip()
+    text = re.sub(r"^```json\s*", "", text, flags=re.I)
+    text = re.sub(r"^```\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip()
 
-설명도 출력하지 않는다.
 
-이미지에 팀이 여러 개 있다면 모든 팀을 추출한다.
-"""
+def _normalize(result):
+    teams = result.get("teams", []) if isinstance(result, dict) else []
+    normalized = []
+    seen = set()
+    for raw in teams:
+        team = dict(raw or {})
+        name = str(team.get("team_name", "")).strip()
+        tag = str(team.get("team_tag", "")).strip()
+        try:
+            size = int(team.get("roster_size", 4))
+        except Exception:
+            size = 4
+        players = [str(team.get(f"player{i}", "")).strip() for i in range(1, 5)]
+        actual = [p for p in players if p]
+        if size not in (3, 4):
+            size = 3 if len(actual) == 3 else 4
+        if size == 3:
+            players[3] = ""
+        key = (name.lower(), tag.lower(), tuple(p.lower() for p in players if p))
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({
+            "team_name": name,
+            "team_tag": tag,
+            "roster_size": size,
+            "player1": players[0],
+            "player2": players[1],
+            "player3": players[2],
+            "player4": players[3],
+            "experiment1": "",
+            "experiment2": "",
+            "experiment3": "",
+            "experiment4": "",
+            "strategy": "",
+            "combat_points": "",
+            "notes": ""
+        })
+    return {"teams": normalized}
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash-lite",
-        contents=[
-            types.Part.from_bytes(
-                data=image_data,
-                mime_type=mime_type
-            ),
-            prompt
-        ]
-    )
 
-    text = response.text.strip()
+def analyze_images(images):
+    contents = []
+    for image_data, mime_type in images:
+        contents.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+    contents.append(PROMPT)
+    response = client.models.generate_content(model=MODEL, contents=contents)
+    return _normalize(json.loads(_clean_json(response.text)))
 
-    # 혹시 Gemini가 ```json ... ``` 형태로 보내더라도 제거
-    text = re.sub(
-        r"^```json\s*",
-        "",
-        text,
-        flags=re.IGNORECASE
-    )
 
-    text = re.sub(
-        r"^```\s*",
-        "",
-        text
-    )
-
-    text = re.sub(
-        r"\s*```$",
-        "",
-        text
-    )
-
-    result = json.loads(text)
-
-    # =====================================================
-    # AI가 실수로 넣은 실험체/분석 데이터 강제 제거
-    # =====================================================
-
-    for team in result.get("teams", []):
-
-        team["experiment1"] = ""
-        team["experiment2"] = ""
-        team["experiment3"] = ""
-        team["experiment4"] = ""
-
-        team["strategy"] = ""
-        team["combat_points"] = ""
-
-    return result
+def analyze_image(image_data, mime_type):
+    return analyze_images([(image_data, mime_type)])
