@@ -52,8 +52,10 @@ def canonicalize_teams(project):
         if known is None and tag:
             known = get_team(tag)
         if known:
-            if known.get("name"): team["team_name"] = known["name"]
-            if known.get("tag"): team["team_tag"] = known["tag"]
+            if known.get("name"):
+                team["team_name"] = known["name"]
+            if known.get("tag"):
+                team["team_tag"] = known["tag"]
 
 
 async def run_analysis(channel, state):
@@ -73,7 +75,11 @@ async def run_analysis(channel, state):
         canonicalize_teams(project)
         canonicalize_players(project)
         current_projects[channel.id] = project
-        await status.edit(content="📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘.", embed=project_embed(project), view=ProjectView(project, save_project_to_sheet))
+        await status.edit(
+            content="📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘.",
+            embed=project_embed(project),
+            view=ProjectView(project, save_project_to_sheet),
+        )
         print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장")
     except asyncio.CancelledError:
         return
@@ -106,7 +112,11 @@ async def analysis_timeout(channel, state):
         else:
             analysis_waiting.pop(channel.id, None)
             status_message = state["status_message"]
-            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 `/전력분석`을 사용해줘!", embed=None, view=None)
+            await status_message.edit(
+                content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 `/전력분석`을 사용해줘!",
+                embed=None,
+                view=None,
+            )
             await asyncio.sleep(3)
             try:
                 await status_message.delete()
@@ -124,10 +134,13 @@ async def on_ready():
     print("=" * 50)
     try:
         for guild in bot.guilds:
+            # 전역으로 등록된 Slash Command를 각 서버에 복사한 뒤 즉시 동기화
+            bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
             print(f"[{guild.name}] Slash Command {len(synced)}개 동기화 완료")
+            print("등록 명령어:", ", ".join(command.name for command in synced))
     except Exception as e:
-        print(f"Slash Command 동기화 오류: {e}")
+        print(f"Slash Command 동기화 오류: {type(e).__name__}: {e}")
 
 
 @bot.tree.command(name="분석채널설정", description="현재 채널을 전력분석 채널로 설정합니다.")
