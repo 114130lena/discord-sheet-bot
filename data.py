@@ -140,3 +140,18 @@ def get_team(value):
 def search_teams(query):
     q = normalize_team(query)
     return [t for t in load_teams().values() if q in normalize_team(t.get("name", "")) or q in normalize_team(t.get("tag", ""))]
+
+
+def auto_register_player(name, team=""):
+    name = str(name).strip()
+    if not name or name == "[확인 필요]": return False
+    if get_player(name): return False
+    return add_player(name, team=team)
+
+
+def auto_register_team(name, tag=""):
+    name = str(name).strip()
+    tag = str(tag).strip()
+    if not name and not tag: return False
+    if get_team(name or tag): return False
+    return add_team(name, tag=tag)
