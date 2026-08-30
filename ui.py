@@ -3,21 +3,38 @@ import discord
 
 def team_text(team, index):
 
+    roster_size = team.get(
+        "roster_size",
+        4
+    )
+
+    players = [
+        team.get("player1", ""),
+        team.get("player2", ""),
+        team.get("player3", "")
+    ]
+
+    if roster_size == 4:
+        players.append(
+            team.get("player4", "")
+        )
+
+    player_text = " / ".join(
+        p for p in players if p
+    )
+
     return (
-        f"**{index + 1}. {team['team_name']}**\n"
-        f"👤 {team['player1']} / "
-        f"{team['player2']} / "
-        f"{team['player3']} / "
-        f"{team['player4']}\n"
-        f"📝 {team['description']}\n"
+        f"**{index + 1}. {team['team_name']} "
+        f"[{roster_size}인]**\n"
+        f"👤 {player_text}\n"
+        f"📝 {team.get('description', '없음')}"
     )
 
 
 def project_embed(project):
 
     embed = discord.Embed(
-        title="📋 팀 명단 분석 결과",
-        description="아래 내용을 확인해주세요."
+        title="📋 팀 명단 분석 결과"
     )
 
     teams = project["teams"]
@@ -29,8 +46,13 @@ def project_embed(project):
     text = ""
 
     for i, team in enumerate(teams):
-        text += team_text(team, i)
-        text += "\n"
+
+        text += team_text(
+            team,
+            i
+        )
+
+        text += "\n\n"
 
     if len(text) > 4000:
         text = text[:3950] + "\n..."
@@ -46,8 +68,15 @@ def project_embed(project):
 
 class ProjectView(discord.ui.View):
 
-    def __init__(self, project, save_callback):
-        super().__init__(timeout=1800)
+    def __init__(
+        self,
+        project,
+        save_callback
+    ):
+
+        super().__init__(
+            timeout=1800
+        )
 
         self.project = project
         self.save_callback = save_callback
@@ -58,12 +87,32 @@ class ProjectView(discord.ui.View):
     )
     async def edit_button(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
+
         await interaction.response.send_message(
-            "수정 기능을 선택해주세요.",
+            "수정할 팀을 선택해주세요.",
             view=EditView(
+                self.project,
+                self.save_callback
+            ),
+            ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="👥 3↔4인",
+        style=discord.ButtonStyle.primary
+    )
+    async def roster_button(
+        self,
+        interaction,
+        button
+    ):
+
+        await interaction.response.send_message(
+            "로스터 인원을 변경할 팀을 선택해주세요.",
+            view=RosterView(
                 self.project,
                 self.save_callback
             ),
@@ -76,9 +125,10 @@ class ProjectView(discord.ui.View):
     )
     async def add_button(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
+
         await interaction.response.send_modal(
             AddTeamModal(
                 self.project,
@@ -92,9 +142,10 @@ class ProjectView(discord.ui.View):
     )
     async def delete_button(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
+
         await interaction.response.send_message(
             "삭제할 팀을 선택해주세요.",
             view=DeleteTeamView(
@@ -105,28 +156,15 @@ class ProjectView(discord.ui.View):
         )
 
     @discord.ui.button(
-        label="🔄 다시 분석",
-        style=discord.ButtonStyle.secondary
-    )
-    async def reanalyze_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            "🔄 같은 사진을 다시 분석하는 기능은 다음 단계에서 연결할게!",
-            ephemeral=True
-        )
-
-    @discord.ui.button(
         label="❌ 취소",
         style=discord.ButtonStyle.secondary
     )
     async def cancel_button(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
+
         await interaction.response.edit_message(
             content="❌ 작업이 취소되었습니다.",
             embed=None,
@@ -136,15 +174,22 @@ class ProjectView(discord.ui.View):
 
 class EditView(discord.ui.View):
 
-    def __init__(self, project, save_callback):
-        super().__init__(timeout=300)
+    def __init__(
+        self,
+        project,
+        save_callback
+    ):
 
-        self.project = project
-        self.save_callback = save_callback
+        super().__init__(
+            timeout=300
+        )
 
         options = []
 
-        for i, team in enumerate(project["teams"][:25]):
+        for i, team in enumerate(
+            project["teams"][:25]
+        ):
+
             options.append(
                 discord.SelectOption(
                     label=f"{i + 1}. {team['team_name']}",
@@ -153,6 +198,7 @@ class EditView(discord.ui.View):
             )
 
         if options:
+
             self.add_item(
                 TeamSelect(
                     project,
@@ -164,7 +210,13 @@ class EditView(discord.ui.View):
 
 class TeamSelect(discord.ui.Select):
 
-    def __init__(self, project, save_callback, options):
+    def __init__(
+        self,
+        project,
+        save_callback,
+        options
+    ):
+
         super().__init__(
             placeholder="수정할 팀 선택",
             options=options
@@ -173,9 +225,14 @@ class TeamSelect(discord.ui.Select):
         self.project = project
         self.save_callback = save_callback
 
-    async def callback(self, interaction):
+    async def callback(
+        self,
+        interaction
+    ):
 
-        index = int(self.values[0])
+        index = int(
+            self.values[0]
+        )
 
         await interaction.response.send_modal(
             EditTeamModal(
@@ -188,7 +245,12 @@ class TeamSelect(discord.ui.Select):
 
 class EditTeamModal(discord.ui.Modal):
 
-    def __init__(self, project, save_callback, index):
+    def __init__(
+        self,
+        project,
+        save_callback,
+        index
+    ):
 
         super().__init__(
             title="팀 정보 수정"
@@ -202,31 +264,31 @@ class EditTeamModal(discord.ui.Modal):
 
         self.team_name = discord.ui.TextInput(
             label="팀명",
-            default=team["team_name"],
+            default=team.get("team_name", ""),
             required=True
         )
 
         self.player1 = discord.ui.TextInput(
             label="선수 1",
-            default=team["player1"],
+            default=team.get("player1", ""),
             required=False
         )
 
         self.player2 = discord.ui.TextInput(
             label="선수 2",
-            default=team["player2"],
+            default=team.get("player2", ""),
             required=False
         )
 
         self.player3 = discord.ui.TextInput(
             label="선수 3",
-            default=team["player3"],
+            default=team.get("player3", ""),
             required=False
         )
 
         self.player4 = discord.ui.TextInput(
             label="선수 4",
-            default=team["player4"],
+            default=team.get("player4", ""),
             required=False
         )
 
@@ -236,7 +298,10 @@ class EditTeamModal(discord.ui.Modal):
         self.add_item(self.player3)
         self.add_item(self.player4)
 
-    async def on_submit(self, interaction):
+    async def on_submit(
+        self,
+        interaction
+    ):
 
         team = self.project["teams"][self.index]
 
@@ -246,7 +311,9 @@ class EditTeamModal(discord.ui.Modal):
         team["player3"] = self.player3.value
         team["player4"] = self.player4.value
 
-        self.save_callback(self.project)
+        self.save_callback(
+            self.project
+        )
 
         await interaction.response.send_message(
             "✅ 팀 정보를 수정했어!",
@@ -254,9 +321,105 @@ class EditTeamModal(discord.ui.Modal):
         )
 
 
+class RosterView(discord.ui.View):
+
+    def __init__(
+        self,
+        project,
+        save_callback
+    ):
+
+        super().__init__(
+            timeout=300
+        )
+
+        options = []
+
+        for i, team in enumerate(
+            project["teams"][:25]
+        ):
+
+            roster = team.get(
+                "roster_size",
+                4
+            )
+
+            options.append(
+                discord.SelectOption(
+                    label=f"{i + 1}. {team['team_name']} ({roster}인)",
+                    value=str(i)
+                )
+            )
+
+        if options:
+
+            self.add_item(
+                RosterSelect(
+                    project,
+                    save_callback,
+                    options
+                )
+            )
+
+
+class RosterSelect(discord.ui.Select):
+
+    def __init__(
+        self,
+        project,
+        save_callback,
+        options
+    ):
+
+        super().__init__(
+            placeholder="팀 선택",
+            options=options
+        )
+
+        self.project = project
+        self.save_callback = save_callback
+
+    async def callback(
+        self,
+        interaction
+    ):
+
+        index = int(
+            self.values[0]
+        )
+
+        team = self.project["teams"][index]
+
+        current = team.get(
+            "roster_size",
+            4
+        )
+
+        new_size = 3 if current == 4 else 4
+
+        team["roster_size"] = new_size
+
+        if new_size == 3:
+            team["player4"] = ""
+
+        self.save_callback(
+            self.project
+        )
+
+        await interaction.response.send_message(
+            f"✅ `{team['team_name']}` → "
+            f"**{new_size}인 로스터**로 변경했어!",
+            ephemeral=True
+        )
+
+
 class AddTeamModal(discord.ui.Modal):
 
-    def __init__(self, project, save_callback):
+    def __init__(
+        self,
+        project,
+        save_callback
+    ):
 
         super().__init__(
             title="팀 추가"
@@ -266,69 +429,83 @@ class AddTeamModal(discord.ui.Modal):
         self.save_callback = save_callback
 
         self.team_name = discord.ui.TextInput(
-            label="팀명"
+            label="팀명",
+            required=True
         )
 
         self.player1 = discord.ui.TextInput(
-            label="선수 1"
+            label="선수 1",
+            required=True
         )
 
         self.player2 = discord.ui.TextInput(
-            label="선수 2"
+            label="선수 2",
+            required=True
         )
 
         self.player3 = discord.ui.TextInput(
-            label="선수 3"
+            label="선수 3",
+            required=True
         )
 
         self.player4 = discord.ui.TextInput(
-            label="선수 4"
+            label="선수 4",
+            required=False
         )
 
-        self.description = discord.ui.TextInput(
-            label="한줄 설명",
-            required=False,
-            style=discord.TextStyle.paragraph
-        )
+        self.add_item(self.team_name)
+        self.add_item(self.player1)
+        self.add_item(self.player2)
+        self.add_item(self.player3)
+        self.add_item(self.player4)
 
-        for item in [
-            self.team_name,
-            self.player1,
-            self.player2,
-            self.player3,
-            self.player4,
-            self.description
-        ]:
-            self.add_item(item)
+    async def on_submit(
+        self,
+        interaction
+    ):
 
-    async def on_submit(self, interaction):
+        player4 = self.player4.value
+
+        roster_size = 4 if player4 else 3
 
         self.project["teams"].append({
             "team_name": self.team_name.value,
+            "roster_size": roster_size,
             "player1": self.player1.value,
             "player2": self.player2.value,
             "player3": self.player3.value,
-            "player4": self.player4.value,
-            "description": self.description.value
+            "player4": player4,
+            "description": ""
         })
 
-        self.save_callback(self.project)
+        self.save_callback(
+            self.project
+        )
 
         await interaction.response.send_message(
-            "✅ 팀을 추가했어!",
+            f"✅ {roster_size}인 팀을 추가했어!",
             ephemeral=True
         )
 
 
 class DeleteTeamView(discord.ui.View):
 
-    def __init__(self, project, save_callback):
+    def __init__(
+        self,
+        project,
+        save_callback
+    ):
 
-        super().__init__(timeout=300)
+        super().__init__(
+            timeout=300
+        )
 
         options = []
 
-        for i, team in enumerate(project["teams"][:25]):
+        for i, team in enumerate(
+            project["teams"][:25]
+        ):
+
             options.append(
                 discord.SelectOption(
                     label=f"{i + 1}. {team['team_name']}",
@@ -337,6 +514,7 @@ class DeleteTeamView(discord.ui.View):
             )
 
         if options:
+
             self.add_item(
                 DeleteTeamSelect(
                     project,
@@ -348,7 +526,12 @@ class DeleteTeamView(discord.ui.View):
 
 class DeleteTeamSelect(discord.ui.Select):
 
-    def __init__(self, project, save_callback, options):
+    def __init__(
+        self,
+        project,
+        save_callback,
+        options
+    ):
 
         super().__init__(
             placeholder="삭제할 팀 선택",
@@ -358,15 +541,22 @@ class DeleteTeamSelect(discord.ui.Select):
         self.project = project
         self.save_callback = save_callback
 
-    async def callback(self, interaction):
+    async def callback(
+        self,
+        interaction
+    ):
 
-        index = int(self.values[0])
+        index = int(
+            self.values[0]
+        )
 
         team_name = self.project["teams"][index]["team_name"]
 
         self.project["teams"].pop(index)
 
-        self.save_callback(self.project)
+        self.save_callback(
+            self.project
+        )
 
         await interaction.response.send_message(
             f"🗑️ `{team_name}` 팀을 삭제했어.",
