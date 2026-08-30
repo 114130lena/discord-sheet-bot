@@ -1,5 +1,7 @@
 import discord
 
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M/edit"
+
 
 def project_embed(project):
     teams = project.get("teams", [])
@@ -37,7 +39,7 @@ class TeamEditModal(discord.ui.Modal):
         for item in (self.team_name,self.team_tag,self.roster,self.players,self.notes): self.add_item(item)
     async def on_submit(self, interaction):
         roster=self.roster.value.strip()
-        if roster not in {"3","4"}: await interaction.response.send_message("❌ 로스터 인원은 3 또는 4만 입력할 수 있어.",ephemeral=True); return
+        if roster not in {"3","4"}: await interaction.response.send_message("❌ 로스터 인원은 3 또는 4만 입력할 수 있습니다.",ephemeral=True); return
         team=self.project["teams"][self.index]; names=[x.strip() for x in self.players.value.splitlines() if x.strip()][:4]
         team["team_name"]=self.team_name.value.strip(); team["team_tag"]=self.team_tag.value.strip(); team["roster_size"]=int(roster)
         for i in range(1,5): team[f"player{i}"]=names[i-1] if i<=len(names) and i<=int(roster) else ""
@@ -55,7 +57,7 @@ class AddTeamModal(discord.ui.Modal):
         for item in (self.team_name,self.team_tag,self.roster,self.players,self.notes): self.add_item(item)
     async def on_submit(self, interaction):
         roster=self.roster.value.strip()
-        if roster not in {"3","4"}: await interaction.response.send_message("❌ 로스터 인원은 3 또는 4만 입력할 수 있어.",ephemeral=True); return
+        if roster not in {"3","4"}: await interaction.response.send_message("❌ 로스터 인원은 3 또는 4만 입력할 수 있습니다.",ephemeral=True); return
         names=[x.strip() for x in self.players.value.splitlines() if x.strip()][:4]
         team={"team_name":self.team_name.value.strip(),"team_tag":self.team_tag.value.strip(),"roster_size":int(roster),"player1":names[0] if len(names)>0 else "","player2":names[1] if len(names)>1 else "","player3":names[2] if len(names)>2 else "","player4":names[3] if len(names)>3 and int(roster)>=4 else "","experiment1":"","experiment2":"","experiment3":"","experiment4":"","strategy":"","combat_points":"","notes":self.notes.value.strip()}
         self.project.setdefault("teams",[]).append(team)
@@ -71,7 +73,7 @@ class TeamSelect(discord.ui.Select):
         super().__init__(placeholder="수정할 팀 선택",options=options)
     async def callback(self,interaction):
         index=int(self.values[0])
-        if index<0: await interaction.response.send_message("❌ 수정할 팀이 없어.",ephemeral=True); return
+        if index<0: await interaction.response.send_message("❌ 수정할 팀이 없습니다.",ephemeral=True); return
         await interaction.response.send_modal(TeamEditModal(self.project,index,self.parent_view))
 
 
@@ -84,7 +86,7 @@ class DeleteTeamSelect(discord.ui.Select):
         super().__init__(placeholder="삭제할 팀 선택",options=options)
     async def callback(self,interaction):
         index=int(self.values[0])
-        if index<0: await interaction.response.send_message("❌ 삭제할 팀이 없어.",ephemeral=True); return
+        if index<0: await interaction.response.send_message("❌ 삭제할 팀이 없습니다.",ephemeral=True); return
         self.project["teams"].pop(index); await interaction.response.edit_message(content="📊 **전력분석 결과**",embed=project_embed(self.project),view=self.parent_view)
 
 
@@ -94,7 +96,7 @@ class EditView(discord.ui.View):
     @discord.ui.button(label="➕ 팀 추가",style=discord.ButtonStyle.success)
     async def add_team(self,interaction,button): await interaction.response.send_modal(AddTeamModal(self.project,self.parent_view))
     @discord.ui.button(label="🗑️ 팀 삭제",style=discord.ButtonStyle.danger)
-    async def delete_team(self,interaction,button): await interaction.response.edit_message(content="🗑️ **삭제할 팀을 선택해줘.**",embed=project_embed(self.project),view=DeleteTeamView(self.project,self.parent_view))
+    async def delete_team(self,interaction,button): await interaction.response.edit_message(content="🗑️ **삭제할 팀을 선택하세요.**",embed=project_embed(self.project),view=DeleteTeamView(self.project,self.parent_view))
     @discord.ui.button(label="↩️ 돌아가기",style=discord.ButtonStyle.secondary)
     async def back(self,interaction,button): await interaction.response.edit_message(content="📊 **전력분석 결과**",embed=project_embed(self.project),view=self.parent_view)
 
@@ -107,32 +109,33 @@ class DeleteTeamView(discord.ui.View):
 
 class ProjectView(discord.ui.View):
     def __init__(self,project,save_callback=None,db_callback=None):
-        super().__init__(timeout=600); self.project=project; self.save_callback=save_callback; self.db_callback=db_callback
+        super().__init__(timeout=300); self.project=project; self.save_callback=save_callback; self.db_callback=db_callback
+        self.add_item(discord.ui.Button(label="📊 Google Sheets 열기", style=discord.ButtonStyle.link, url=SHEET_URL))
     @discord.ui.button(label="✏️ 수정",style=discord.ButtonStyle.primary)
-    async def edit_button(self,interaction,button): await interaction.response.edit_message(content="✏️ **수정할 팀을 선택해줘.**",embed=project_embed(self.project),view=EditView(self.project,self))
+    async def edit_button(self,interaction,button): await interaction.response.edit_message(content="✏️ **수정할 팀을 선택하세요.**",embed=project_embed(self.project),view=EditView(self.project,self))
     @discord.ui.button(label="🧠 DB 반영",style=discord.ButtonStyle.secondary)
     async def db_button(self,interaction,button):
-        if self.db_callback is None: await interaction.response.send_message("❌ DB 기능이 연결되지 않았어.",ephemeral=True); return
+        if self.db_callback is None: await interaction.response.send_message("❌ DB 기능이 연결되지 않았습니다.",ephemeral=True); return
         await interaction.response.defer()
         try:
             result=self.db_callback(self.project)
             if hasattr(result,"__await__"): result=await result
             for child in self.children:
                 if getattr(child,"label","")=="🧠 DB 반영": child.disabled=True
-            await interaction.edit_original_response(content=f"🧠 **DB 반영 완료!**\n신규 팀 {result.get('teams',0)}개 · 신규 선수 {result.get('players',0)}명 · 이적 {result.get('transfers',0)}건\n💾 반영 전 DB 백업도 생성했어.",embed=project_embed(self.project),view=self)
+            await interaction.edit_original_response(content=f"🧠 **DB 반영 완료.**\n신규 팀 {result.get('teams',0)}개 · 신규 선수 {result.get('players',0)}명 · 이적 {result.get('transfers',0)}건\n💾 반영 전 DB 백업도 생성했습니다.",embed=project_embed(self.project),view=self)
         except Exception as e:
             print(f"DB 반영 오류: {e}"); await interaction.edit_original_response(content=f"❌ **DB 반영 실패:** `{type(e).__name__}: {e}`",embed=project_embed(self.project),view=self)
     @discord.ui.button(label="💾 시트에 저장",style=discord.ButtonStyle.success)
     async def save_button(self,interaction,button):
-        if self.save_callback is None: await interaction.response.send_message("❌ 저장 기능이 연결되지 않았어.",ephemeral=True); return
+        if self.save_callback is None: await interaction.response.send_message("❌ 저장 기능이 연결되지 않았습니다.",ephemeral=True); return
         await interaction.response.defer()
         try:
             result=self.save_callback(self.project)
-            if hasattr(result,"__await__"): await result
-            await interaction.edit_original_response(content="✅ **Google Sheets 저장 완료!**",embed=project_embed(self.project),view=self)
+            url = await result if hasattr(result,"__await__") else result
+            await interaction.edit_original_response(content="✅ **Google Sheets 저장 완료.**\n아래 버튼으로 시트를 열 수 있습니다.",embed=project_embed(self.project),view=self)
         except Exception as e:
             print(f"Google Sheets 저장 오류: {e}"); await interaction.edit_original_response(content=f"❌ **저장 실패:** `{type(e).__name__}`",embed=project_embed(self.project),view=self)
     @discord.ui.button(label="❌ 닫기",style=discord.ButtonStyle.danger)
     async def close_button(self,interaction,button):
         for child in self.children: child.disabled=True
-        await interaction.response.edit_message(content="🛑 **전력분석 편집을 종료했어.**",view=self)
+        await interaction.response.edit_message(content="🛑 **전력분석 편집을 종료했습니다.**",view=self)
