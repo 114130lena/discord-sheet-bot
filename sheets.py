@@ -17,7 +17,7 @@ gc = gspread.authorize(credentials)
 
 
 # 여기에 네 Google Sheets ID를 넣어
-SPREADSHEET_ID = "여기에_스프레드시트_ID"
+SPREADSHEET_ID = "1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M"
 
 
 def update_spreadsheet(project):
