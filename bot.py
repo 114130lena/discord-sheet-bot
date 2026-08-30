@@ -1,11 +1,17 @@
 import os
+import base64
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -42,17 +48,82 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if message.attachments:
-        for attachment in message.attachments:
-            if attachment.content_type and attachment.content_type.startswith("image/"):
-                print(f"이미지 수신: {attachment.filename}")
+    for attachment in message.attachments:
+        if attachment.content_type and attachment.content_type.startswith("image/"):
+            await message.channel.send("🔍 사진을 분석하고 있어...")
+
+            try:
+                image_data = await attachment.read()
+                base64_image = base64.b64encode(image_data).decode("utf-8")
+
+                response = client.responses.create(
+                    model="gpt-4.1-mini",
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": """
+이 이미지는 팀 명단 표야.
+
+표에서 다음 정보를 찾아줘:
+- 팀명
+- 선수 1
+- 선수 2
+- 선수 3
+- 선수 4
+- 한줄 설명
+
+읽을 수 없는 부분은 추측하지 말고 [확인 필요]라고 표시해.
+
+결과는 다음 형식으로만 작성해:
+
+팀 1:
+팀명:
+선수1:
+선수2:
+선수3:
+선수4:
+설명:
+
+팀 2:
+팀명:
+선수1:
+선수2:
+선수3:
+선수4:
+설명:
+
+이미지에 있는 팀 수만큼 작성해.
+"""
+                                },
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:{attachment.content_type};base64,{base64_image}"
+                                }
+                            ]
+                        }
+                    ]
+                )
+
+                result = response.output_text
+
+                if len(result) > 1900:
+                    result = result[:1900] + "\n...(결과가 너무 길어 일부 생략됨)"
 
                 await message.channel.send(
-                    f"📷 `{attachment.filename}` 사진을 받았어!\n"
-                    "🔍 이제 표 내용을 분석하는 기능을 연결할 예정이야."
+                    f"📋 **사진 분석 결과**\n```text\n{result}\n```"
+                )
+
+            except Exception as e:
+                print(f"AI 분석 오류: {e}")
+                await message.channel.send(
+                    "❌ 사진 분석 중 오류가 발생했어.\n"
+                    f"```{e}```"
                 )
 
     await bot.process_commands(message)
 
 
-bot.run(TOKEN)
+bot.run(DISCORD_TOKEN)
