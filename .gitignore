@@ -1,6 +1,6 @@
 .env
-*.json
+google-service-account.json
+data/
 __pycache__/
-*.pyc
 venv/
 .env.*
