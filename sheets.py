@@ -1,10 +1,9 @@
 import gspread
-
 from google.oauth2.service_account import Credentials
 
 
 # =========================================================
-# Google API
+# Google API 설정
 # =========================================================
 
 SCOPES = [
@@ -22,7 +21,7 @@ gc = gspread.authorize(credentials)
 
 
 # =========================================================
-# Spreadsheet
+# Google Sheets ID
 # =========================================================
 
 SPREADSHEET_ID = (
@@ -31,18 +30,17 @@ SPREADSHEET_ID = (
 
 
 # =========================================================
-# 메인 전력분석 시트
+# 워크시트 가져오기 / 없으면 생성
 # =========================================================
 
 def get_or_create_worksheet(
     spreadsheet,
     title,
-    rows=100,
-    cols=20
+    rows=200,
+    cols=12
 ):
 
     try:
-
         return spreadsheet.worksheet(title)
 
     except gspread.WorksheetNotFound:
@@ -55,7 +53,7 @@ def get_or_create_worksheet(
 
 
 # =========================================================
-# 메인 시트 생성
+# 전력분석 시트 업데이트
 # =========================================================
 
 def update_spreadsheet(project):
@@ -64,10 +62,6 @@ def update_spreadsheet(project):
         SPREADSHEET_ID
     )
 
-    # -----------------------------------------------------
-    # 전력분석 시트
-    # -----------------------------------------------------
-
     worksheet = get_or_create_worksheet(
         spreadsheet,
         "전력분석",
@@ -75,18 +69,23 @@ def update_spreadsheet(project):
         cols=12
     )
 
-    # 기존 내용 제거
+    # =====================================================
+    # 기존 내용 삭제
+    # =====================================================
+
     worksheet.clear()
 
-    # 기존 병합 제거
+    # =====================================================
+    # 기존 병합 해제
+    # =====================================================
+
     try:
 
         worksheet.unmerge_cells(
-            "A1:L200"
+            "A1:I200"
         )
 
     except Exception:
-
         pass
 
     teams = project.get(
@@ -99,16 +98,18 @@ def update_spreadsheet(project):
     # =====================================================
 
     worksheet.merge_cells(
-        "A1:H1"
+        "A1:I1"
     )
 
     worksheet.update(
-        "A1",
-        "2026 전력분석"
+        range_name="A1",
+        values=[
+            ["2026 전력분석"]
+        ]
     )
 
     worksheet.format(
-        "A1:H1",
+        "A1:I1",
         {
             "textFormat": {
                 "bold": True,
@@ -116,6 +117,13 @@ def update_spreadsheet(project):
             },
             "horizontalAlignment": "LEFT",
             "verticalAlignment": "MIDDLE"
+        }
+    )
+
+    worksheet.format(
+        "1:1",
+        {
+            "rowHeight": 38
         }
     )
 
@@ -130,49 +138,52 @@ def update_spreadsheet(project):
         "운영 전략 / 교전 포인트"
     ]
 
-    # 왼쪽 / 오른쪽 두 영역
     worksheet.update(
-        "A2:D2",
-        [headers]
+        range_name="A2:D2",
+        values=[headers]
     )
 
     worksheet.update(
-        "F2:I2",
-        [headers]
+        range_name="F2:I2",
+        values=[headers]
     )
 
+    # =====================================================
     # 헤더 서식
-    for header_range in [
+    # =====================================================
+
+    header_format = {
+        "textFormat": {
+            "bold": True,
+            "fontSize": 11
+        },
+        "horizontalAlignment": "CENTER",
+        "verticalAlignment": "MIDDLE",
+        "wrapStrategy": "WRAP"
+    }
+
+    worksheet.format(
         "A2:D2",
-        "F2:I2"
-    ]:
+        header_format
+    )
 
-        worksheet.format(
-            header_range,
-            {
-                "textFormat": {
-                    "bold": True,
-                    "fontSize": 11
-                },
-                "horizontalAlignment": "CENTER",
-                "verticalAlignment": "MIDDLE",
-                "wrapStrategy": "WRAP"
-            }
-        )
+    worksheet.format(
+        "F2:I2",
+        header_format
+    )
+
+    worksheet.format(
+        "2:2",
+        {
+            "rowHeight": 32
+        }
+    )
 
     # =====================================================
-    # 팀을 좌우 2열로 배치
+    # 팀 작성 함수
     # =====================================================
-
-    left_teams = teams[0::2]
-    right_teams = teams[1::2]
-
-    # -----------------------------------------------------
-    # 팀 하나를 작성하는 함수
-    # -----------------------------------------------------
 
     def write_team(
-        ws,
         team,
         start_row,
         team_column,
@@ -191,30 +202,33 @@ def update_spreadsheet(project):
             ""
         )
 
-        # 팀명 + 약칭 표시
-        if team_tag:
+        # -------------------------------------------------
+        # 팀명 표시
+        # -------------------------------------------------
+
+        if team_name and team_tag:
 
             display_name = (
                 f"{team_name}\n"
                 f"[{team_tag}]"
             )
 
-        else:
+        elif team_name:
 
             display_name = team_name
 
+        elif team_tag:
+
+            display_name = f"[{team_tag}]"
+
+        else:
+
+            display_name = ""
+
         # -------------------------------------------------
-        # 선수
+        # 로스터
         # -------------------------------------------------
 
-        players = [
-            team.get("player1", ""),
-            team.get("player2", ""),
-            team.get("player3", ""),
-            team.get("player4", "")
-        ]
-
-        # 실제 로스터 수
         try:
 
             roster_size = int(
@@ -228,6 +242,17 @@ def update_spreadsheet(project):
 
             roster_size = 4
 
+        players = [
+            team.get("player1", ""),
+            team.get("player2", ""),
+            team.get("player3", ""),
+            team.get("player4", "")
+        ]
+
+        # -------------------------------------------------
+        # 3인 로스터
+        # -------------------------------------------------
+
         if roster_size == 3:
 
             players[3] = ""
@@ -238,48 +263,53 @@ def update_spreadsheet(project):
 
         end_row = start_row + 3
 
-        # 팀명은 4줄 병합
-        ws.merge_cells(
+        worksheet.merge_cells(
             f"{team_column}{start_row}:"
             f"{team_column}{end_row}"
         )
 
-        ws.update(
-            f"{team_column}{start_row}",
-            display_name
+        worksheet.update(
+            range_name=f"{team_column}{start_row}",
+            values=[
+                [display_name]
+            ]
         )
 
         # -------------------------------------------------
         # 선수 / 실험체 / 분석
         # -------------------------------------------------
 
-        for index in range(4):
+        for i in range(4):
 
-            row = start_row + index
+            row = start_row + i
 
-            player = players[index]
+            player = players[i]
 
-            # 실험체는 항상 빈칸
+            # 실험체는 의도적으로 빈칸
             experiment = ""
 
-            # 분석도 현재는 빈칸
+            # 운영 전략 / 교전 포인트도 의도적으로 빈칸
             analysis = ""
 
-            ws.update(
-                f"{player_column}{row}:"
-                f"{analysis_column}{row}",
-                [[
-                    player,
-                    experiment,
-                    analysis
-                ]]
+            worksheet.update(
+                range_name=(
+                    f"{player_column}{row}:"
+                    f"{analysis_column}{row}"
+                ),
+                values=[
+                    [
+                        player,
+                        experiment,
+                        analysis
+                    ]
+                ]
             )
 
         # -------------------------------------------------
-        # 팀 영역 서식
+        # 팀명 서식
         # -------------------------------------------------
 
-        ws.format(
+        worksheet.format(
             f"{team_column}{start_row}:"
             f"{team_column}{end_row}",
             {
@@ -297,7 +327,7 @@ def update_spreadsheet(project):
         # 선수 / 실험체
         # -------------------------------------------------
 
-        ws.format(
+        worksheet.format(
             f"{player_column}{start_row}:"
             f"{experiment_column}{end_row}",
             {
@@ -308,10 +338,10 @@ def update_spreadsheet(project):
         )
 
         # -------------------------------------------------
-        # 분석
+        # 분석 영역
         # -------------------------------------------------
 
-        ws.format(
+        worksheet.format(
             f"{analysis_column}{start_row}:"
             f"{analysis_column}{end_row}",
             {
@@ -330,15 +360,22 @@ def update_spreadsheet(project):
             end_row + 1
         ):
 
-            ws.format(
+            worksheet.format(
                 f"{row}:{row}",
                 {
-                    "rowHeight": 32
+                    "rowHeight": 35
                 }
             )
 
     # =====================================================
-    # 왼쪽 팀
+    # 좌우 2열 배치
+    # =====================================================
+
+    left_teams = teams[0::2]
+    right_teams = teams[1::2]
+
+    # =====================================================
+    # 왼쪽
     # =====================================================
 
     current_row = 3
@@ -346,7 +383,6 @@ def update_spreadsheet(project):
     for team in left_teams:
 
         write_team(
-            worksheet,
             team,
             current_row,
             "A",
@@ -358,7 +394,7 @@ def update_spreadsheet(project):
         current_row += 4
 
     # =====================================================
-    # 오른쪽 팀
+    # 오른쪽
     # =====================================================
 
     current_row = 3
@@ -366,7 +402,6 @@ def update_spreadsheet(project):
     for team in right_teams:
 
         write_team(
-            worksheet,
             team,
             current_row,
             "F",
@@ -381,21 +416,21 @@ def update_spreadsheet(project):
     # 열 너비
     # =====================================================
 
-    widths = {
-        "A": 150,
+    column_widths = {
+        "A": 170,
         "B": 120,
         "C": 110,
-        "D": 330,
+        "D": 320,
 
         "E": 25,
 
-        "F": 150,
+        "F": 170,
         "G": 120,
         "H": 110,
-        "I": 330
+        "I": 320
     }
 
-    for column, width in widths.items():
+    for column, width in column_widths.items():
 
         worksheet.format(
             f"{column}:{column}",
@@ -405,7 +440,7 @@ def update_spreadsheet(project):
         )
 
     # =====================================================
-    # 전체 테두리
+    # 테두리
     # =====================================================
 
     last_row = max(
@@ -413,53 +448,37 @@ def update_spreadsheet(project):
         7
     )
 
-    for cell_range in [
-        f"A2:D{last_row}",
-        f"F2:I{last_row}"
-    ]:
-
-        worksheet.format(
-            cell_range,
-            {
-                "borders": {
-                    "top": {
-                        "style": "SOLID"
-                    },
-                    "bottom": {
-                        "style": "SOLID"
-                    },
-                    "left": {
-                        "style": "SOLID"
-                    },
-                    "right": {
-                        "style": "SOLID"
-                    },
-                    "innerHorizontal": {
-                        "style": "SOLID"
-                    },
-                    "innerVertical": {
-                        "style": "SOLID"
-                    }
-                }
+    border_format = {
+        "borders": {
+            "top": {
+                "style": "SOLID"
+            },
+            "bottom": {
+                "style": "SOLID"
+            },
+            "left": {
+                "style": "SOLID"
+            },
+            "right": {
+                "style": "SOLID"
+            },
+            "innerHorizontal": {
+                "style": "SOLID"
+            },
+            "innerVertical": {
+                "style": "SOLID"
             }
-        )
-
-    # =====================================================
-    # 제목 행 높이
-    # =====================================================
+        }
+    }
 
     worksheet.format(
-        "1:1",
-        {
-            "rowHeight": 35
-        }
+        f"A2:D{last_row}",
+        border_format
     )
 
     worksheet.format(
-        "2:2",
-        {
-            "rowHeight": 30
-        }
+        f"F2:I{last_row}",
+        border_format
     )
 
     # =====================================================
@@ -471,7 +490,7 @@ def update_spreadsheet(project):
     )
 
     print(
-        f"Google Sheets 전력분석 업데이트 완료: "
+        f"Google Sheets 업데이트 완료: "
         f"{len(teams)}개 팀"
     )
 
