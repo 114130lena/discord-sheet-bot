@@ -61,6 +61,44 @@ def normalize_player_name(name):
     return " ".join(str(name).strip().lower().split())
 
 
+def _edit_distance(a, b):
+    if a == b: return 0
+    if not a: return len(b)
+    if not b: return len(a)
+    if len(a) > len(b): a, b = b, a
+    prev = list(range(len(a) + 1))
+    for i, cb in enumerate(b, 1):
+        cur = [i]
+        for j, ca in enumerate(a, 1):
+            cur.append(min(cur[-1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _fuzzy_match(query, candidates, normalizer):
+    q = normalizer(query)
+    if not q: return None
+    scored = []
+    for candidate in candidates:
+        value = normalizer(candidate)
+        if not value or value == q: continue
+        distance = _edit_distance(q, value)
+        max_len = max(len(q), len(value))
+        ratio = 1 - (distance / max_len)
+        if max_len <= 2: continue
+        allowed = 1 if max_len <= 5 else 2
+        if distance <= allowed and ratio >= (0.67 if max_len <= 5 else 0.75):
+            scored.append((distance, -ratio, candidate))
+    if not scored: return None
+    scored.sort(key=lambda x: (x[0], x[1]))
+    best = scored[0]
+    if len(scored) > 1:
+        second = scored[1]
+        if best[0] == second[0] and abs(best[1] - second[1]) < 0.08:
+            return None
+    return best[2]
+
+
 def add_player(name, tag="", team="", notes=""):
     name = str(name).strip()
     if not name: return False
@@ -75,18 +113,31 @@ def remove_player(name):
     del players[key]; save_players(players); return True
 
 
-def get_player(name): return load_players().get(normalize_player_name(name))
+def get_player(name):
+    players = load_players(); key = normalize_player_name(name)
+    if key in players: return players[key]
+    match = _fuzzy_match(name, [p.get("name", "") for p in players.values()], normalize_player_name)
+    if match: return players.get(normalize_player_name(match))
+    return None
 
 
 def search_players(query):
-    q = normalize_player_name(query)
-    return [p for p in load_players().values() if q in normalize_player_name(p.get("name", ""))]
+    q = normalize_player_name(query); players = load_players()
+    found = [p for p in players.values() if q in normalize_player_name(p.get("name", ""))]
+    if found: return found
+    match = _fuzzy_match(query, [p.get("name", "") for p in players.values()], normalize_player_name)
+    if match: return [players[normalize_player_name(match)]]
+    return []
 
 
 def update_player_team(name, new_team):
     name = str(name).strip(); new_team = str(new_team).strip()
     if not name or not new_team: return {"status": "invalid", "name": name}
     players = load_players(); key = normalize_player_name(name); player = players.get(key)
+    if not player:
+        matched = get_player(name)
+        if matched:
+            key = normalize_player_name(matched.get("name", name)); player = players.get(key)
     if not player:
         add_player(name, team=new_team); return {"status": "new", "name": name, "team": new_team}
     old_team = str(player.get("team", "")).strip()
@@ -139,12 +190,29 @@ def get_team(value):
     if key in teams: return teams[key]
     for team in teams.values():
         if normalize_team(team.get("name", "")) == key or normalize_team(team.get("tag", "")) == key: return team
+    candidates = []
+    for team in teams.values():
+        if team.get("name"): candidates.append(team.get("name"))
+        if team.get("tag"): candidates.append(team.get("tag"))
+    match = _fuzzy_match(value, candidates, normalize_team)
+    if match:
+        for team in teams.values():
+            if normalize_team(team.get("name", "")) == normalize_team(match) or normalize_team(team.get("tag", "")) == normalize_team(match): return team
     return None
 
 
 def search_teams(query):
-    q = normalize_team(query)
-    return [t for t in load_teams().values() if q in normalize_team(t.get("name", "")) or q in normalize_team(t.get("tag", ""))]
+    q = normalize_team(query); teams = load_teams()
+    found = [t for t in teams.values() if q in normalize_team(t.get("name", "")) or q in normalize_team(t.get("tag", ""))]
+    if found: return found
+    candidates = []
+    for team in teams.values():
+        if team.get("name"): candidates.append(team.get("name"))
+        if team.get("tag"): candidates.append(team.get("tag"))
+    match = _fuzzy_match(query, candidates, normalize_team)
+    if match:
+        return [t for t in teams.values() if normalize_team(t.get("name", "")) == normalize_team(match) or normalize_team(t.get("tag", "")) == normalize_team(match)]
+    return []
 
 
 def auto_register_player(name, team=""):
@@ -155,7 +223,7 @@ def auto_register_player(name, team=""):
 
 def auto_register_team(name, tag=""):
     name = str(name).strip(); tag = str(tag).strip()
-    if not name and not tag or get_team(name or tag): return False
+    if (not name and not tag) or get_team(name or tag): return False
     return add_team(name, tag=tag)
 
 
