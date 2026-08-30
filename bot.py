@@ -94,6 +94,17 @@ def apply_db_updates(project):
     return project["db_suggestion_result"]
 
 
+async def delete_result_later(message, delay=300):
+    try:
+        await asyncio.sleep(delay)
+        try:
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+    except asyncio.CancelledError:
+        return
+
+
 async def run_analysis(channel, state):
     if analysis_waiting.get(channel.id) is not state: return
     status = state["status_message"]
@@ -101,14 +112,14 @@ async def run_analysis(channel, state):
         analysis_waiting.pop(channel.id, None)
         timer = state.get("timer_task")
         if timer and timer is not asyncio.current_task(): timer.cancel()
-        await status.edit(content="🔍 **사진을 분석하고 있어...**\n잠깐만 기다려줘!", embed=None, view=None)
+        await status.edit(content="🔍 **사진을 분석하고 있습니다.**\n잠시만 기다려 주세요.", embed=None, view=None)
         images = list(state["images"])
         result = await asyncio.to_thread(analyze_images, images)
         project = create_project(); project["teams"] = result.get("teams", [])
         canonicalize_teams(project); transfer_changes = canonicalize_players(project)
         current_projects[channel.id] = project
         suggestions = project.get("db_suggestions", {})
-        message = "📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고친 뒤 DB 반영 여부를 결정해줘."
+        message = "📋 **분석 완료.**\n오류가 있으면 `✏️ 수정`으로 수정한 뒤 DB 반영 여부를 선택해 주세요."
         if suggestions.get("players"):
             message += f"\n\n🆕 신규 선수 **{len(suggestions['players'])}명** 발견"
         if suggestions.get("teams"):
@@ -116,11 +127,12 @@ async def run_analysis(channel, state):
         if transfer_changes:
             message += "\n🔄 **이적 의심**\n" + "\n".join(f"• **{c['name']}** {c.get('old_team') or '무소속'} → **{c['team']}**" for c in transfer_changes)
         await status.edit(content=message, embed=project_embed(project), view=ProjectView(project, save_project_to_sheet, apply_db_updates))
+        asyncio.create_task(delete_result_later(status, 300))
         print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장 / 신규선수 {len(suggestions.get('players', []))} / 신규팀 {len(suggestions.get('teams', []))} / 이적 {len(transfer_changes)}")
     except asyncio.CancelledError: return
     except Exception as e:
         analysis_waiting.pop(channel.id, None); print("분석 오류:", repr(e))
-        try: await status.edit(content=f"❌ **분석 중 오류가 발생했어.**\n`{type(e).__name__}: {e}`", embed=None, view=None)
+        try: await status.edit(content=f"❌ **분석 중 오류가 발생했습니다.**\n`{type(e).__name__}: {e}`", embed=None, view=None)
         except Exception: pass
 
 
@@ -138,7 +150,7 @@ async def analysis_timeout(channel, state):
         if state["images"]: await run_analysis(channel, state)
         else:
             analysis_waiting.pop(channel.id, None); status_message = state["status_message"]
-            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료됐어.**\n다시 `/전력분석`을 사용해줘!", embed=None, view=None)
+            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료되었습니다.**\n다시 `/전력분석`을 사용해 주세요.", embed=None, view=None)
             await asyncio.sleep(3)
             try: await status_message.delete()
             except (discord.NotFound, discord.Forbidden, discord.HTTPException): pass
@@ -160,7 +172,7 @@ async def on_ready():
 @discord.app_commands.checks.has_permissions(manage_guild=True)
 async def set_analysis_channel(interaction):
     analysis_channels.add(interaction.channel_id); persist_channels()
-    await interaction.response.send_message("📊 **전력분석 채널로 설정했어!** 이제 `/전력분석`을 실행했을 때만 사진을 분석해.", delete_after=5)
+    await interaction.response.send_message("📊 **전력분석 채널로 설정되었습니다.** `/전력분석`을 실행했을 때만 사진을 분석합니다.", delete_after=5)
 
 
 @bot.tree.command(name="분석채널해제", description="현재 채널의 전력분석 채널 설정을 해제합니다.")
@@ -171,17 +183,17 @@ async def unset_analysis_channel(interaction):
     if state:
         for key in ("timer_task", "debounce_task"):
             if state.get(key): state[key].cancel()
-    await interaction.response.send_message("🛑 **전력분석 채널 설정을 해제했어!**", delete_after=5)
+    await interaction.response.send_message("🛑 **전력분석 채널 설정이 해제되었습니다.**", delete_after=5)
 
 
 @bot.tree.command(name="전력분석", description="30초 동안 로스터 사진을 받습니다.")
 async def start_analysis(interaction):
     channel_id = interaction.channel_id
     if channel_id not in analysis_channels:
-        await interaction.response.send_message("❌ 이 채널은 전력분석 채널이 아니야. 먼저 `/분석채널설정`을 사용해줘!", ephemeral=True); return
+        await interaction.response.send_message("❌ 이 채널은 전력분석 채널이 아닙니다. 먼저 `/분석채널설정`을 사용해 주세요.", ephemeral=True); return
     if channel_id in analysis_waiting:
-        await interaction.response.send_message("⏳ 이미 사진을 기다리고 있어!", ephemeral=True); return
-    await interaction.response.send_message("📷 **전력분석 준비 완료!**\n사진을 올려줘. 여러 장이면 연속으로 올려도 돼.\n⏱️ **30초 후 자동 종료**")
+        await interaction.response.send_message("⏳ 이미 사진을 기다리고 있습니다.", ephemeral=True); return
+    await interaction.response.send_message("📷 **전력분석 준비 완료.**\n사진을 업로드해 주세요. 여러 장이면 연속으로 업로드할 수 있습니다.\n⏱️ **30초 후 자동 종료**")
     status = await interaction.original_response(); state = {"status_message": status, "images": [], "timer_task": None, "debounce_task": None}
     analysis_waiting[channel_id] = state; state["timer_task"] = asyncio.create_task(analysis_timeout(interaction.channel, state))
 
@@ -195,7 +207,7 @@ async def reset_analysis(interaction):
             if state.get(key): state[key].cancel()
     project = current_projects.pop(channel_id, None)
     if project: delete_project(project["id"])
-    await interaction.response.send_message("🧹 **현재 분석 데이터를 초기화했어.**", delete_after=5)
+    await interaction.response.send_message("🧹 **현재 분석 데이터가 초기화되었습니다.**", delete_after=5)
 
 
 @bot.tree.command(name="선수등록", description="선수 DB에 선수를 등록합니다.")
@@ -207,19 +219,19 @@ async def player_add(interaction, 선수명: str, 팀: str = "", 메모: str = "
 @bot.tree.command(name="선수삭제", description="선수 DB에서 선수를 삭제합니다.")
 @discord.app_commands.checks.has_permissions(manage_guild=True)
 async def player_remove(interaction, 선수명: str):
-    ok = remove_player(선수명); await interaction.response.send_message("🗑️ 삭제 완료." if ok else "❌ 등록된 선수를 찾지 못했어.", ephemeral=True)
+    ok = remove_player(선수명); await interaction.response.send_message("🗑️ 삭제 완료." if ok else "❌ 등록된 선수를 찾지 못했습니다.", ephemeral=True)
 
 
 @bot.tree.command(name="선수검색", description="선수 DB에서 선수를 검색합니다.")
 async def player_search(interaction, 검색어: str):
-    found = search_players(검색어); text = "❌ 검색 결과가 없어." if not found else "\n".join(f"• **{p['name']}**" + (f" — {p['team']}" if p.get('team') else "") for p in found[:20])
+    found = search_players(검색어); text = "❌ 검색 결과가 없습니다." if not found else "\n".join(f"• **{p['name']}**" + (f" — {p['team']}" if p.get('team') else "") for p in found[:20])
     await interaction.response.send_message("👤 **선수 DB 검색**\n" + text, ephemeral=True)
 
 
 @bot.tree.command(name="선수정보", description="선수 DB의 상세 정보를 확인합니다.")
 async def player_info(interaction, 선수명: str):
     p = get_player(선수명)
-    if not p: await interaction.response.send_message("❌ 등록된 선수를 찾지 못했어.", ephemeral=True); return
+    if not p: await interaction.response.send_message("❌ 등록된 선수를 찾지 못했습니다.", ephemeral=True); return
     history = p.get("history", []); history_text = "\n".join(f"• {h.get('team', '-')} ({h.get('from') or '?'} ~ {h.get('to') or '현재 이전'})" for h in history[-10:]) or "없음"
     await interaction.response.send_message(f"👤 **{p['name']}**\n현재 팀: {p.get('team') or '-'}\n이전 팀 기록:\n{history_text}\n메모: {p.get('notes') or '-'}", ephemeral=True)
 
@@ -233,19 +245,19 @@ async def team_add(interaction, 팀명: str, 약칭: str = "", 메모: str = "")
 @bot.tree.command(name="팀삭제", description="팀 DB에서 팀을 삭제합니다.")
 @discord.app_commands.checks.has_permissions(manage_guild=True)
 async def team_remove(interaction, 팀명또는약칭: str):
-    ok = remove_team(팀명또는약칭); await interaction.response.send_message("🗑️ 팀 DB에서 삭제 완료." if ok else "❌ 등록된 팀을 찾지 못했어.", ephemeral=True)
+    ok = remove_team(팀명또는약칭); await interaction.response.send_message("🗑️ 팀 DB에서 삭제 완료." if ok else "❌ 등록된 팀을 찾지 못했습니다.", ephemeral=True)
 
 
 @bot.tree.command(name="팀검색", description="팀 DB에서 팀명 또는 약칭을 검색합니다.")
 async def team_search(interaction, 검색어: str):
-    found = search_teams(검색어); text = "❌ 검색 결과가 없어." if not found else "\n".join(f"• **{t.get('name') or '-'}** [{t.get('tag') or '-'}]" for t in found[:20])
+    found = search_teams(검색어); text = "❌ 검색 결과가 없습니다." if not found else "\n".join(f"• **{t.get('name') or '-'}** [{t.get('tag') or '-'}]" for t in found[:20])
     await interaction.response.send_message("🏷️ **팀 DB 검색**\n" + text, ephemeral=True)
 
 
 @bot.tree.command(name="팀정보", description="팀 DB의 상세 정보를 확인합니다.")
 async def team_info(interaction, 팀명또는약칭: str):
     t = get_team(팀명또는약칭)
-    if not t: await interaction.response.send_message("❌ 등록된 팀을 찾지 못했어.", ephemeral=True); return
+    if not t: await interaction.response.send_message("❌ 등록된 팀을 찾지 못했습니다.", ephemeral=True); return
     await interaction.response.send_message(f"🏷️ **{t.get('name') or '-'}**\n약칭: {t.get('tag') or '-'}\n메모: {t.get('notes') or '-'}", ephemeral=True)
 
 
@@ -261,7 +273,7 @@ async def on_message(message):
     for attachment in attachments:
         try: state["images"].append((await attachment.read(), attachment.content_type or "image/png"))
         except Exception as e: print(f"이미지 읽기 오류: {e}")
-    count = len(state["images"]); await state["status_message"].edit(content=f"📷 **사진 {count}장 받았어!**\n계속 올려도 돼. 잠시 후 분석할게.")
+    count = len(state["images"]); await state["status_message"].edit(content=f"📷 **사진 {count}장 수신.**\n계속 업로드할 수 있습니다. 잠시 후 분석합니다.")
     if state.get("debounce_task"): state["debounce_task"].cancel()
     state["debounce_task"] = asyncio.create_task(debounce_analysis(message.channel, state)); await bot.process_commands(message)
 
@@ -275,9 +287,9 @@ async def on_message(message):
 @team_remove.error
 async def permission_error(interaction, error):
     if isinstance(error, discord.app_commands.errors.MissingPermissions):
-        await interaction.response.send_message("❌ 이 명령어는 **서버 관리** 권한이 필요해!", ephemeral=True)
+        await interaction.response.send_message("❌ 이 명령어는 **서버 관리** 권한이 필요합니다.", ephemeral=True)
     elif not interaction.response.is_done():
-        await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했어.", ephemeral=True)
+        await interaction.response.send_message("❌ 명령어 실행 중 오류가 발생했습니다.", ephemeral=True)
 
 
 if not TOKEN: raise RuntimeError("DISCORD_TOKEN 환경변수를 찾을 수 없습니다.")
