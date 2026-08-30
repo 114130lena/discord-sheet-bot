@@ -207,7 +207,7 @@ class ProjectView(
 
         try:
 
-            url = create_spreadsheet(
+            url = update_spreadsheet(
                 self.project
             )
 
