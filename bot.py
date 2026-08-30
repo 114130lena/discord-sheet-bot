@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from ai import analyze_images
-from data import create_project, save_project, delete_project, load_config, save_config, add_player, remove_player, get_player, search_players, add_team, remove_team, get_team, search_teams, auto_register_player, auto_register_team
+from data import create_project, save_project, delete_project, load_config, save_config, add_player, remove_player, get_player, search_players, add_team, remove_team, get_team, search_teams, auto_register_player, auto_register_team, update_player_team
 from sheets import update_spreadsheet
 from ui import ProjectView, project_embed
 
@@ -30,21 +30,8 @@ def save_project_to_sheet(project):
     return url
 
 
-def canonicalize_players(project):
-    for team in project.get("teams", []):
-        team_name = str(team.get("team_name", "")).strip()
-        for i in range(1, 5):
-            name = str(team.get(f"player{i}", "")).strip()
-            if not name or name == "[확인 필요]":
-                continue
-            exact = get_player(name)
-            matches = search_players(name)
-            if exact:
-                team[f"player{i}"] = exact.get("name", name)
-            elif len(matches) == 1:
-                team[f"player{i}"] = matches[0].get("name", name)
-            else:
-                auto_register_player(name, team=team_name)
+def normalize_for_compare(value):
+    return " ".join(str(value or "").strip().lower().split())
 
 
 def canonicalize_teams(project):
@@ -63,6 +50,31 @@ def canonicalize_teams(project):
             auto_register_team(name, tag=tag)
 
 
+def canonicalize_players(project):
+    transfer_changes = []
+    for team in project.get("teams", []):
+        team_name = str(team.get("team_name", "")).strip()
+        for i in range(1, 5):
+            name = str(team.get(f"player{i}", "")).strip()
+            if not name or name == "[확인 필요]":
+                continue
+            exact = get_player(name)
+            matches = search_players(name)
+            canonical_name = name
+            if exact:
+                canonical_name = exact.get("name", name)
+            elif len(matches) == 1:
+                canonical_name = matches[0].get("name", name)
+            else:
+                auto_register_player(name, team=team_name)
+            team[f"player{i}"] = canonical_name
+            if team_name and canonical_name != "[확인 필요]":
+                change = update_player_team(canonical_name, team_name)
+                if change.get("status") == "changed":
+                    transfer_changes.append(change)
+    return transfer_changes
+
+
 async def run_analysis(channel, state):
     if analysis_waiting.get(channel.id) is not state:
         return
@@ -78,10 +90,13 @@ async def run_analysis(channel, state):
         project = create_project()
         project["teams"] = result.get("teams", [])
         canonicalize_teams(project)
-        canonicalize_players(project)
+        transfer_changes = canonicalize_players(project)
         current_projects[channel.id] = project
-        await status.edit(content="📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘.", embed=project_embed(project), view=ProjectView(project, save_project_to_sheet))
-        print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장")
+        message = "📋 **분석 완료!**\n틀린 부분은 `✏️ 수정`으로 고치고 확인이 끝나면 저장해줘."
+        if transfer_changes:
+            message += "\n\n🔄 **선수 이적 감지**\n" + "\n".join(f"• **{c['name'] if 'name' in c else ''}** {c.get('old_team', '?')} → **{c.get('team', '?')}**" for c in transfer_changes)
+        await status.edit(content=message, embed=project_embed(project), view=ProjectView(project, save_project_to_sheet))
+        print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장 / 이적 {len(transfer_changes)}건")
     except asyncio.CancelledError:
         return
     except Exception as e:
@@ -222,7 +237,9 @@ async def player_info(interaction, 선수명: str):
     if not p:
         await interaction.response.send_message("❌ 등록된 선수를 찾지 못했어.", ephemeral=True)
         return
-    text = f"👤 **{p['name']}**\n팀: {p.get('team') or '-'}\n메모: {p.get('notes') or '-'}"
+    history = p.get("history", [])
+    history_text = "\n".join(f"• {h.get('team', '-')} ({h.get('from') or '?'} ~ {h.get('to') or '현재 이전'})" for h in history[-10:]) or "없음"
+    text = f"👤 **{p['name']}**\n현재 팀: {p.get('team') or '-'}\n이전 팀 기록:\n{history_text}\n메모: {p.get('notes') or '-'}"
     await interaction.response.send_message(text, ephemeral=True)
 
 
