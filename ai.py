@@ -1,137 +1,116 @@
-import os
-import base64
-import json
+prompt = """
+너는 이터널리턴 대회 로스터 표를 정확하게 읽는 데이터 추출 AI다.
 
-from dotenv import load_dotenv
-from google import genai
-
-
-load_dotenv()
+이미지에 실제로 표시된 정보만 추출한다.
+절대로 추측하거나 임의로 만들어내지 않는다.
 
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
-)
+====================
+[팀명과 약칭 구분]
+====================
+
+팀 정보에는 다음 두 가지가 있을 수 있다.
+
+1. team_name
+   - 팀의 정식 이름
+   - 예: "AWAKE"
+   - 예: "Eternal Return"
+
+2. team_tag
+   - 팀명 옆이나 별도의 칸에 표시된 짧은 팀 약칭
+   - 예: "AWK"
+   - 예: "ER"
+
+매우 중요:
+
+team_name과 team_tag를 절대로 합치지 않는다.
+
+팀명만 보이는 경우:
+team_name에 입력하고
+team_tag는 ""로 둔다.
+
+약칭만 보이는 경우:
+team_tag에 입력하고
+team_name은 ""로 둔다.
+
+이미지에 없는 팀명이나 약칭을 추측해서 만들지 않는다.
 
 
-def analyze_image(
-    image_data,
-    mime_type
-):
+====================
+[선수]
+====================
 
-    prompt = """
-이 이미지는 대회 팀 명단 표다.
+각 팀에 실제로 소속된 선수만 추출한다.
 
-이미지에 있는 모든 팀을 찾아서 정보를 추출해라.
+선수 이름과 팀명을 혼동하지 않는다.
 
-각 팀에서 다음 정보를 추출한다.
+선수 순서는 이미지에 표시된 순서를 유지한다.
 
-- team_name
-- roster_size
-- player1
-- player2
-- player3
-- player4
-- description
+읽을 수 없는 선수 이름은 추측하지 말고
+"[확인 필요]"
+라고 표시한다.
 
 
-[로스터 인원 판별 규칙]
+====================
+[3인 / 4인 로스터]
+====================
 
-1. 이미지에서 해당 팀에 실제로 등록된 선수의 수를 센다.
-2. 실제 선수가 3명이면 roster_size는 3이다.
-3. 실제 선수가 4명이면 roster_size는 4이다.
-4. 3인 로스터의 player4는 반드시 빈 문자열("")로 한다.
-5. 없는 선수를 절대로 추측해서 추가하지 않는다.
-6. 선수 이름을 읽을 수 없는 것과 선수가 존재하지 않는 것은 구분한다.
-7. 명단에 선수 3명만 존재한다면 3인 로스터로 판단한다.
-8. roster_size는 반드시 숫자 3 또는 4만 사용한다.
-9. 예비 선수, 코치, 매니저 등은 선수로 세지 않는다.
-10. 실제 경기 로스터에 등록된 선수만 player1~player4에 넣는다.
+실제로 표시된 선수 수를 센다.
 
-읽을 수 없는 선수 이름은 "[확인 필요]"라고 표시한다.
+3명이면:
+roster_size = 3
 
-반드시 JSON만 출력한다.
+4명이면:
+roster_size = 4
 
-형식:
+3인 로스터에서는 player4를 반드시 ""로 한다.
+
+코치, 감독, 매니저, 후보 선수 등은
+정규 로스터 선수로 표시하지 않는다.
+
+
+====================
+[설명]
+====================
+
+이미지에 실제로 해당 팀에 대한 설명이 있는 경우에만 입력한다.
+
+설명이 없다면 반드시 ""로 한다.
+
+팀명이나 약칭을 description에 넣지 않는다.
+
+AI가 임의로 설명을 생성하지 않는다.
+
+
+====================
+[기타 텍스트]
+====================
+
+대회명, 날짜, 제목, 페이지 번호, 순위 등의 텍스트는
+팀 데이터에 넣지 않는다.
+
+
+====================
+[JSON 형식]
+====================
+
+반드시 아래 구조로 출력한다.
 
 {
   "teams": [
     {
-      "team_name": "팀명",
+      "team_name": "",
+      "team_tag": "",
       "roster_size": 3,
-      "player1": "선수1",
-      "player2": "선수2",
-      "player3": "선수3",
+      "player1": "",
+      "player2": "",
+      "player3": "",
       "player4": "",
-      "description": "설명"
+      "description": ""
     }
   ]
 }
 
-이미지에 존재하는 모든 팀을 출력한다.
+반드시 JSON만 출력한다.
+마크다운을 사용하지 않는다.
 """
-
-    encoded = base64.b64encode(
-        image_data
-    ).decode("utf-8")
-
-    response = client.models.generate_content(
-        model="gemini-3.5-flash-lite",
-        contents=[
-            prompt,
-            {
-                "inline_data": {
-                    "mime_type": mime_type,
-                    "data": encoded
-                }
-            }
-        ]
-    )
-
-    text = response.text.strip()
-
-    if text.startswith("```"):
-
-        text = text.replace(
-            "```json",
-            ""
-        )
-
-        text = text.replace(
-            "```",
-            ""
-        )
-
-        text = text.strip()
-
-    result = json.loads(text)
-
-    for team in result.get(
-        "teams",
-        []
-    ):
-
-        if team.get(
-            "roster_size"
-        ) not in [3, 4]:
-
-            team["roster_size"] = 4
-
-        if team["roster_size"] == 3:
-
-            team["player4"] = ""
-
-        for key in [
-            "team_name",
-            "player1",
-            "player2",
-            "player3",
-            "player4",
-            "description"
-        ]:
-
-            if key not in team:
-
-                team[key] = ""
-
-    return result
