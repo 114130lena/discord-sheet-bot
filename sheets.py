@@ -16,8 +16,11 @@ credentials = Credentials.from_service_account_file(
 gc = gspread.authorize(credentials)
 
 
-# 여기에 네 Google Sheets ID를 넣어
-SPREADSHEET_ID = "1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M"
+# ==========================================
+# Google Sheets ID
+# ==========================================
+
+SPREADSHEET_ID = "여기에_스프레드시트_ID"
 
 
 def update_spreadsheet(project):
@@ -31,17 +34,25 @@ def update_spreadsheet(project):
     # 기존 데이터 삭제
     worksheet.clear()
 
-    headers = [
-        "팀명",
-        "로스터",
-        "선수 1",
-        "선수 2",
-        "선수 3",
-        "선수 4",
-        "설명"
-    ]
+    # ==========================================
+    # 제목
+    # ==========================================
 
-    rows = [headers]
+    worksheet.update(
+        "A1:H1",
+        [[
+            "팀명",
+            "약칭",
+            "인원",
+            "선수 1",
+            "선수 2",
+            "선수 3",
+            "선수 4",
+            "설명"
+        ]]
+    )
+
+    rows = []
 
     for team in project.get("teams", []):
 
@@ -55,43 +66,167 @@ def update_spreadsheet(project):
             ""
         )
 
+        # 3인 로스터
         if roster_size == 3:
-            player4 = ""
+            player4 = "—"
 
         rows.append([
-            team.get("team_name", ""),
+            team.get(
+                "team_name",
+                ""
+            ),
+
+            team.get(
+                "team_tag",
+                ""
+            ),
+
             f"{roster_size}인",
-            team.get("player1", ""),
-            team.get("player2", ""),
-            team.get("player3", ""),
+
+            team.get(
+                "player1",
+                ""
+            ),
+
+            team.get(
+                "player2",
+                ""
+            ),
+
+            team.get(
+                "player3",
+                ""
+            ),
+
             player4,
-            team.get("description", "")
+
+            team.get(
+                "description",
+                ""
+            )
         ])
 
-    worksheet.update(
-        "A1",
-        rows
-    )
+    # ==========================================
+    # 데이터 입력
+    # ==========================================
 
-    worksheet.freeze(rows=1)
+    if rows:
 
-    worksheet.set_basic_filter()
+        worksheet.update(
+            f"A2:H{len(rows) + 1}",
+            rows
+        )
+
+    # ==========================================
+    # 열 너비
+    # ==========================================
+
+    widths = {
+        "A": 180,
+        "B": 80,
+        "C": 70,
+        "D": 120,
+        "E": 120,
+        "F": 120,
+        "G": 120,
+        "H": 400
+    }
+
+    for column, width in widths.items():
+
+        worksheet.format(
+            f"{column}:{column}",
+            {
+                "columnWidth": width
+            }
+        )
+
+    # ==========================================
+    # 헤더
+    # ==========================================
 
     worksheet.format(
-        "A:G",
+        "A1:H1",
         {
-            "wrapStrategy": "WRAP",
+            "textFormat": {
+                "bold": True,
+                "fontSize": 11
+            },
+            "horizontalAlignment": "CENTER",
             "verticalAlignment": "MIDDLE"
         }
     )
 
+    # ==========================================
+    # 전체 데이터
+    # ==========================================
+
     worksheet.format(
-        "A1:G1",
+        f"A2:H{max(len(rows) + 1, 2)}",
         {
-            "textFormat": {
-                "bold": True
-            }
+            "verticalAlignment": "MIDDLE",
+            "wrapStrategy": "WRAP"
         }
     )
+
+    # ==========================================
+    # 팀명 / 약칭 / 인원 / 선수 가운데 정렬
+    # ==========================================
+
+    worksheet.format(
+        f"A2:G{max(len(rows) + 1, 2)}",
+        {
+            "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE",
+            "wrapStrategy": "WRAP"
+        }
+    )
+
+    # ==========================================
+    # 설명 왼쪽 정렬
+    # ==========================================
+
+    worksheet.format(
+        f"H2:H{max(len(rows) + 1, 2)}",
+        {
+            "horizontalAlignment": "LEFT",
+            "verticalAlignment": "MIDDLE",
+            "wrapStrategy": "WRAP"
+        }
+    )
+
+    # ==========================================
+    # 헤더 고정
+    # ==========================================
+
+    worksheet.freeze(
+        rows=1
+    )
+
+    # ==========================================
+    # 필터
+    # ==========================================
+
+    try:
+
+        worksheet.set_basic_filter()
+
+    except Exception:
+
+        pass
+
+    # ==========================================
+    # 행 높이
+    # ==========================================
+
+    if rows:
+
+        worksheet.format(
+            f"A2:H{len(rows) + 1}",
+            {
+                "wrapStrategy": "WRAP",
+                "verticalAlignment": "MIDDLE"
+            }
+        )
 
     return spreadsheet.url
