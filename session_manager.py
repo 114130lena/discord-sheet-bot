@@ -1,16 +1,18 @@
 import os
 import shutil
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from data import DATA_DIR, create_project, save_project, load_project, delete_project, normalize_team
 
 MAX_TEAMS = 8
 BACKUP_DIR = os.path.join(DATA_DIR, "session_backups")
+KST = ZoneInfo("Asia/Seoul")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
 def _now():
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(KST).isoformat(timespec="seconds")
 
 
 def _session_path(project):
@@ -36,7 +38,7 @@ def ensure_session(project):
     project.setdefault("session_channel_id", None)
     project.setdefault("session_owner_id", None)
     project.setdefault("session_backup_count", 0)
-    project.setdefault("sheet_title", f"전력분석_{project.get('session_id', 'unknown')}")
+    project.setdefault("sheet_title", "전력분석")
     return project
 
 
@@ -56,7 +58,7 @@ def new_session(event_name="", session_name="", guild_id=None, channel_id=None, 
         "session_channel_id": str(channel_id) if channel_id is not None else None,
         "session_owner_id": str(owner_id) if owner_id is not None else None,
         "session_backup_count": 0,
-        "sheet_title": f"전력분석_{sid}",
+        "sheet_title": "전력분석",
     })
     save_project(project)
     backup_session(project)
@@ -95,12 +97,6 @@ def session_count(project):
     return len(project.get("teams", [])) if project else 0
 
 
-def _team_key(team):
-    name = normalize_team(team.get("team_name", ""))
-    tag = normalize_team(team.get("team_tag", ""))
-    return name or tag
-
-
 def _team_aliases(team):
     values = []
     for key in ("team_name", "team_tag"):
@@ -117,30 +113,27 @@ def merge_teams(project, incoming):
     for team in existing:
         for alias in _team_aliases(team):
             normalized_existing[alias] = team
-    added = 0
+    additions = []
     duplicates = 0
     for team in incoming or []:
         aliases = _team_aliases(team)
         match = next((normalized_existing[a] for a in aliases if a in normalized_existing), None)
         if match is not None:
-            for k, value in team.items():
-                if value not in (None, "", [], {}):
-                    match[k] = value
             duplicates += 1
-            continue
-        if len(existing) >= MAX_TEAMS:
-            return {"ok": False, "added": added, "duplicates": duplicates, "reason": "max"}
+        else:
+            additions.append(team)
+    if len(existing) + len(additions) > MAX_TEAMS:
+        return {"ok": False, "added": 0, "duplicates": duplicates, "reason": "max"}
+    for team in additions:
         existing.append(team)
-        for alias in aliases:
+        for alias in _team_aliases(team):
             normalized_existing[alias] = team
-        added += 1
-    return {"ok": True, "added": added, "duplicates": duplicates, "reason": "ok"}
+    return {"ok": True, "added": len(additions), "duplicates": duplicates, "reason": "ok"}
 
 
 def add_batch(project, incoming, image_count):
     project = ensure_session(project)
-    incoming = incoming or []
-    result = merge_teams(project, incoming)
+    result = merge_teams(project, incoming or [])
     if not result["ok"]:
         return result
     project["session_updated_at"] = _now()
@@ -150,7 +143,7 @@ def add_batch(project, incoming, image_count):
         "batch": len(batches) + 1,
         "timestamp": project["session_updated_at"],
         "image_count": int(image_count),
-        "teams_found": len(incoming),
+        "teams_found": len(incoming or []),
         "teams_added": result["added"],
         "teams_merged": result["duplicates"],
     })
@@ -164,12 +157,11 @@ def backup_session(project):
     path = _session_path(project)
     if not os.path.exists(path):
         save_project(project)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    stamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S_%f")
     sid = project.get("session_id", project.get("id", "unknown"))
     dst = os.path.join(BACKUP_DIR, f"{sid}_{stamp}.json")
     shutil.copy2(path, dst)
     project["session_backup_count"] = int(project.get("session_backup_count", 0)) + 1
-    # Update the source project without recursively backing it up.
     save_project(project)
     files = [os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith(".json")]
     files.sort(key=os.path.getmtime, reverse=True)
