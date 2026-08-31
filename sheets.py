@@ -1,3 +1,4 @@
+import re
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -10,35 +11,51 @@ gc = gspread.authorize(credentials)
 SPREADSHEET_ID = "1FARr4g1gNM1P9oaFvpFSd3xWJo1BtgBy9398WwlzU8M"
 
 
-def get_or_create_worksheet(spreadsheet):
+def _safe_title(title):
+    title = re.sub(r"[\\/*?:\[\]]", "_", str(title or "전력분석"))
+    return title[:100] or "전력분석"
+
+
+def get_or_create_worksheet(spreadsheet, title):
+    title = _safe_title(title)
     try:
-        return spreadsheet.worksheet("전력분석")
+        return spreadsheet.worksheet(title)
     except gspread.WorksheetNotFound:
-        return spreadsheet.add_worksheet(title="전력분석", rows=300, cols=10)
+        return spreadsheet.add_worksheet(title=title, rows=400, cols=10)
 
 
 def update_spreadsheet(project):
     spreadsheet = gc.open_by_key(SPREADSHEET_ID)
-    ws = get_or_create_worksheet(spreadsheet)
+    title = _safe_title(project.get("sheet_title") or f"전력분석_{project.get('session_id', project.get('id', 'session'))}")
+    ws = get_or_create_worksheet(spreadsheet, title)
     sid = ws.id
     teams = project.get("teams", [])
+    batches = project.get("session_batches", [])
+    session_id = str(project.get("session_id") or project.get("id") or "-")
     requests = []
 
-    # 전체 영역 초기화 + 기존 병합 제거
-    base = {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 300, "startColumnIndex": 0, "endColumnIndex": 10}
+    base = {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 10}
     requests.append({"unmergeCells": {"range": base}})
     requests.append({"updateCells": {"range": base, "fields": "userEnteredValue,userEnteredFormat"}})
 
-    # 제목
     requests.append({"mergeCells": {"range": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}})
     requests.append({"updateCells": {
-        "rows": [{"values": [{"userEnteredValue": {"stringValue": "📊 전력분석"}, "userEnteredFormat": {
+        "rows": [{"values": [{"userEnteredValue": {"stringValue": "📊 전력분석 세션"}, "userEnteredFormat": {
             "backgroundColor": {"red": 0.09, "green": 0.13, "blue": 0.18},
             "textFormat": {"bold": True, "fontSize": 18, "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
             "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-        }}]}],
-        "start": {"sheetId": sid, "rowIndex": 0, "columnIndex": 0}, "fields": "userEnteredValue,userEnteredFormat"
+        }}]}], "start": {"sheetId": sid, "rowIndex": 0, "columnIndex": 0}, "fields": "userEnteredValue,userEnteredFormat"
     }})
+
+    session_info = f"세션 ID: {session_id}  |  분석 묶음: {len(batches)}회  |  누적 팀: {len(teams)}팀"
+    requests.append({"updateCells": {
+        "rows": [{"values": [{"userEnteredValue": {"stringValue": session_info}, "userEnteredFormat": {
+            "backgroundColor": {"red": 0.94, "green": 0.96, "blue": 0.98},
+            "textFormat": {"bold": True, "fontSize": 10},
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+        }}]}], "start": {"sheetId": sid, "rowIndex": 1, "columnIndex": 0}, "fields": "userEnteredValue,userEnteredFormat"
+    }})
+    requests.append({"mergeCells": {"range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}})
 
     headers = ["팀", "선수", "실험체", "분석 메모"]
     for start_col in (0, 5):
@@ -47,9 +64,7 @@ def update_spreadsheet(project):
                 "backgroundColor": {"red": 0.20, "green": 0.29, "blue": 0.38},
                 "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
                 "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-            }} for h in headers]}],
-            "start": {"sheetId": sid, "rowIndex": 1, "columnIndex": start_col},
-            "fields": "userEnteredValue,userEnteredFormat"
+            }} for h in headers]}], "start": {"sheetId": sid, "rowIndex": 2, "columnIndex": start_col}, "fields": "userEnteredValue,userEnteredFormat"
         }})
 
     team_colors = [
@@ -73,7 +88,6 @@ def update_spreadsheet(project):
         memo = str(team.get("notes", "") or team.get("strategy", "") or "")
         dark, light = team_colors[idx % len(team_colors)]
 
-        # 팀 셀과 분석 셀은 로스터 수만큼 병합
         for c in (col, col + 3):
             requests.append({"mergeCells": {"range": {"sheetId": sid, "startRowIndex": row, "endRowIndex": row + size, "startColumnIndex": c, "endColumnIndex": c + 1}, "mergeType": "MERGE_ALL"}})
 
@@ -97,27 +111,27 @@ def update_spreadsheet(project):
             ]})
         requests.append({"updateCells": {"rows": rows, "start": {"sheetId": sid, "rowIndex": row, "columnIndex": col + 1}, "fields": "userEnteredValue,userEnteredFormat"}})
 
-        # 팀 블록 전체 테두리
         requests.append({"updateBorders": {"range": {"sheetId": sid, "startRowIndex": row, "endRowIndex": row + size, "startColumnIndex": col, "endColumnIndex": col + 4}, "top": thick, "bottom": thick, "left": thick, "right": thick, "innerHorizontal": border, "innerVertical": border}})
         requests.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": row, "endIndex": row + size}, "properties": {"pixelSize": 38}, "fields": "pixelSize"}})
 
     left = teams[0::2]
     right = teams[1::2]
-    row = 2
+    row = 3
     for i, team in enumerate(left):
         add_team(team, row, 0, i * 2)
-        row += 4
-    row = 2
+        row += max(4, int(team.get("roster_size", 4))) + 1
+    row = 3
     for i, team in enumerate(right):
         add_team(team, row, 5, i * 2 + 1)
-        row += 4
+        row += max(4, int(team.get("roster_size", 4))) + 1
 
     widths = {0: 180, 1: 125, 2: 110, 3: 280, 4: 25, 5: 180, 6: 125, 7: 110, 8: 280}
     for c, width in widths.items():
         requests.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1}, "properties": {"pixelSize": width}, "fields": "pixelSize"}})
-    requests.append({"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 2}}, "fields": "gridProperties.frozenRowCount"}})
+    requests.append({"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 3}}, "fields": "gridProperties.frozenRowCount"}})
     requests.append({"updateSheetProperties": {"properties": {"sheetId": sid, "gridProperties": {"hideGridlines": True}}, "fields": "gridProperties.hideGridlines"}})
 
     spreadsheet.batch_update({"requests": requests})
-    print(f"Google Sheets 업데이트 완료: {len(teams)}개 팀")
-    return spreadsheet.url
+    url = f"{spreadsheet.url}#gid={sid}"
+    print(f"Google Sheets 업데이트 완료: 세션 {session_id} / {len(teams)}개 팀 / {len(batches)}회 분석")
+    return url
