@@ -11,19 +11,25 @@ async def on_ready():
     print(f"서버 수: {len(bot.guilds)} / 분석 채널: {len(analysis_channels)}개")
     print("=" * 50)
     try:
-        # 현재 코드에 정의된 전역 명령어를 복사해 길드 전용으로 등록합니다.
-        # 과거에 남아 있던 전역 명령어는 먼저 동기화하여 제거합니다.
-        commands_to_sync = [command.copy() for command in bot.tree.get_commands()]
+        # 현재 코드에 정의된 명령어를 먼저 확보합니다.
+        commands_to_sync = list(bot.tree.get_commands())
+
+        # 전역 명령어는 사용하지 않도록 원격 전역 등록을 비웁니다.
         bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
 
+        # 각 서버에 동일한 명령어 세트를 길드 전용으로 등록합니다.
         for guild in bot.guilds:
             bot.tree.clear_commands(guild=guild)
             for command in commands_to_sync:
-                bot.tree.add_command(command.copy(), guild=guild, override=True)
+                bot.tree.add_command(command, guild=guild, override=True)
             synced = await bot.tree.sync(guild=guild)
             print(f"[{guild.name}] Slash Command {len(synced)}개 동기화 완료")
             print("등록 명령어:", ", ".join(command.name for command in synced))
+
+        # 다음 준비 이벤트에서도 원래 전역 명령어를 다시 사용할 수 있도록 복구합니다.
+        for command in commands_to_sync:
+            bot.tree.add_command(command, override=True)
     except Exception as e:
         print(f"Slash Command 동기화 오류: {type(e).__name__}: {e}")'''
 
