@@ -58,6 +58,23 @@ PROMPT = r'''
 }
 '''
 
+CLEANUP_PROMPT = r'''
+너는 방금 이터널리턴 대회 로스터 이미지에서 추출된 텍스트를 검수하는 AI다.
+원본 이미지를 다시 자세히 보고, 아래의 추출 결과에서 OCR/판독 실수로 보이는 오타만 매우 보수적으로 수정해라.
+
+중요 규칙:
+- 원본 이미지의 글자 모양으로 확실히 확인되는 경우에만 수정한다.
+- 선수명이나 팀명을 추측해서 새로운 이름을 만들어내지 않는다.
+- 한글 자모, 영문 대소문자, 숫자 1/I/l, 0/O, 붙어 읽힌 문자 등 명백한 판독 오류는 원본을 보고 수정할 수 있다.
+- 확신이 없으면 기존 값을 그대로 유지한다.
+- 팀명, 팀 태그, player1~player4만 검수한다.
+- 선수 순서와 팀 순서는 절대로 바꾸지 않는다.
+- 새 팀이나 새 선수를 추가하거나 삭제하지 않는다.
+
+아래 추출 결과와 같은 구조의 JSON만 출력한다.
+추출 결과:
+'''
+
 
 def _clean_json(text):
     text = text.strip()
@@ -108,13 +125,39 @@ def _normalize(result):
     return {"teams": normalized}
 
 
+def _cleanup_extraction(images, extracted):
+    """Re-check extracted names against the original images.
+
+    This deliberately makes no corrections unless the model can visually verify
+    an obvious OCR/reading mistake, so uncertain names stay unchanged.
+    """
+    contents = []
+    for image_data, mime_type in images:
+        contents.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+    contents.append(CLEANUP_PROMPT + "\n" + json.dumps(extracted, ensure_ascii=False))
+    response = client.models.generate_content(model=MODEL, contents=contents)
+    cleaned = json.loads(_clean_json(response.text))
+    if not isinstance(cleaned, dict) or not isinstance(cleaned.get("teams"), list):
+        return extracted
+    return cleaned
+
+
 def analyze_images(images):
     contents = []
     for image_data, mime_type in images:
         contents.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
     contents.append(PROMPT)
     response = client.models.generate_content(model=MODEL, contents=contents)
-    return _normalize(json.loads(_clean_json(response.text)))
+    extracted = json.loads(_clean_json(response.text))
+
+    # Second visual pass: fixes only clearly verifiable reading/OCR mistakes.
+    try:
+        extracted = _cleanup_extraction(images, extracted)
+    except Exception as e:
+        # A failed cleanup must never discard a successful first analysis.
+        print(f"OCR 검수 단계 건너뜀: {type(e).__name__}: {e}")
+
+    return _normalize(extracted)
 
 
 def analyze_image(image_data, mime_type):
