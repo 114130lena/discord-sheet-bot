@@ -8,7 +8,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/discord-sheet-bot
 EnvironmentFile=/home/ubuntu/discord-sheet-bot/.env
-ExecStart=/home/ubuntu/discord-sheet-bot/venv/bin/python /home/ubuntu/discord-sheet-bot/production_launcher.py
+ExecStart=/home/ubuntu/discord-sheet-bot/venv/bin/python /home/ubuntu/discord-sheet-bot/safe_launcher.py
 Restart=always
 RestartSec=5
 
