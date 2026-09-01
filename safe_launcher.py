@@ -12,12 +12,11 @@ source = re.sub(
 )
 
 # Discord rejects uppercase/Korean Python parameter names when serializing slash
-# command option names. The production launcher injects several session commands
-# with the parameter named '세션ID', so normalize it before executing the launcher.
+# command option names. Normalize the injected session command parameters.
 source = source.replace("세션ID", "session_id")
 
-# Replace the production launcher's generated on_ready handler before it runs.
-# Do not clear the global tree: clearing it before sync removes decorated commands.
+# Use guild commands only for immediate availability. A command registered both
+# globally and for the current guild appears twice in Discord's slash-command UI.
 sync_handler = '''on_ready_replacement = \'\'\'@bot.event
 async def on_ready():
     print("=" * 50, flush=True)
@@ -25,12 +24,18 @@ async def on_ready():
     print(f"서버 수: {len(bot.guilds)} / 분석 채널: {len(analysis_channels)}개", flush=True)
     print("=" * 50, flush=True)
     try:
-        global_synced = await bot.tree.sync()
-        print(f"글로벌 Slash Command {len(global_synced)}개 동기화 완료", flush=True)
+        commands_to_sync = list(bot.tree.get_commands())
 
+        # Remove the old global commands from Discord first.
+        bot.tree.clear_commands(guild=None)
+        cleared = await bot.tree.sync()
+        print(f"글로벌 Slash Command 정리 완료 ({len(cleared)}개 남음)", flush=True)
+
+        # Register the saved command objects only in each connected guild.
         for guild in bot.guilds:
             bot.tree.clear_commands(guild=guild)
-            bot.tree.copy_global_to(guild=guild)
+            for command in commands_to_sync:
+                bot.tree.add_command(command, guild=guild, override=True)
             synced = await bot.tree.sync(guild=guild)
             print(f"[{guild.name}] Slash Command {len(synced)}개 동기화 완료", flush=True)
             print("등록 명령어:", ", ".join(command.name for command in synced), flush=True)
