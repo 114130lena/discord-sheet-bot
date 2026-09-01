@@ -1,6 +1,7 @@
 import discord
 from ui import ProjectView as BaseProjectView, project_embed as base_project_embed
 from session_manager import mark_status
+from nickname_ui import NicknameTypeMixin
 
 
 def project_embed(project):
@@ -21,8 +22,8 @@ def project_embed(project):
     return embed
 
 
-class ProjectView(BaseProjectView):
-    """기존 분석 UI에 세션 관리 기능을 추가합니다."""
+class ProjectView(NicknameTypeMixin, BaseProjectView):
+    """기존 분석 UI에 세션 관리와 닉네임 구분 기능을 추가합니다."""
 
     @discord.ui.button(label="➕ 세션 추가", style=discord.ButtonStyle.primary, row=1)
     async def session_add_hint(self, interaction, button):
