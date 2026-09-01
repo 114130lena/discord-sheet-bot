@@ -15,11 +15,13 @@ source = re.sub(
 # command option names. Normalize the injected session command parameters.
 source = source.replace("세션ID", "session_id")
 
-# Replace the standard result view with the enhanced view. This keeps the
-# existing buttons while adding a manual DB-based typo-correction button.
+# production_launcher.py first rewrites the original ui import to session_ui.
+# Patch that generated import instead of changing the quoted source pattern itself;
+# changing the quoted pattern would break production_launcher.py syntax.
 source = source.replace(
-    "from ui import ProjectView, project_embed",
-    "from ui import project_embed\nfrom ui_db_fix import DBFixProjectView as ProjectView",
+    '"from session_ui import ProjectView, project_embed"',
+    '"from session_ui import project_embed\\nfrom ui_db_fix import DBFixProjectView as ProjectView"',
+    1,
 )
 
 # Use guild commands only for immediate availability. A command registered both
