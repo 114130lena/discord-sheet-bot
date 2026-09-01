@@ -56,13 +56,33 @@ def save_config(config):
 
 
 # -------------------------
+# Player DB storage
+# -------------------------
+def load_players():
+    """Load the registered player database safely."""
+    if not os.path.exists(PLAYERS_PATH):
+        return {}
+    try:
+        with open(PLAYERS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_players(players):
+    with open(PLAYERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(players, f, ensure_ascii=False, indent=2)
+
+
+# -------------------------
 # Player DB matching
 # -------------------------
 def normalize_player_name(name):
     """Comparison form for player names.
 
     OCR often inserts spaces or punctuation (for example C I S T A, CISTA!,
-    C I-S T A).  Remove those differences before fuzzy matching while keeping
+    C I-S T A). Remove those differences before fuzzy matching while keeping
     Korean, English and numeric characters intact.
     """
     return re.sub(r"[^0-9a-z가-힣]", "", str(name).casefold().strip())
@@ -96,8 +116,6 @@ def _similarity(query, candidate):
     ratio = SequenceMatcher(None, q, c).ratio()
     distance_ratio = 1 - (_edit_distance(q, c) / max(len(q), len(c)))
     score = max(ratio, distance_ratio)
-    # OCR commonly adds one extra character. A contained name is useful, but
-    # should not be trusted enough by itself for very short names.
     if min(len(q), len(c)) >= 3 and (q in c or c in q):
         score = max(score, min(0.98, score + 0.04))
     return score
@@ -106,7 +124,7 @@ def _similarity(query, candidate):
 def _player_match_threshold(query):
     length = len(normalize_player_name(query))
     if length <= 2:
-        return 1.01  # only exact lookup is allowed for very short nicknames
+        return 1.01
     if length <= 4:
         return 0.88
     if length <= 6:
@@ -115,13 +133,6 @@ def _player_match_threshold(query):
 
 
 def find_player_match(query, team_hint=""):
-    """Return the safest DB player match for an OCR/AI extracted nickname.
-
-    Matching checks both the registered player name and optional tag.  The
-    winner must clear a dynamic confidence threshold and also be sufficiently
-    ahead of the second candidate, so similar nicknames are not silently
-    changed to the wrong person.
-    """
     q = normalize_player_name(query)
     if not q:
         return None
@@ -168,8 +179,6 @@ def find_player_match(query, team_hint=""):
 
     if len(scored) > 1:
         second_score = scored[1][0]
-        # For a perfect exact match there is no ambiguity. Otherwise require a
-        # visible gap so names such as '루크라/루크란' are left untouched.
         required_margin = 0.04 if best_score >= 0.98 else 0.07
         if best_score - second_score < required_margin:
             return None
@@ -247,12 +256,9 @@ def get_player(name):
     key = normalize_player_name(name)
     if key in players:
         return players[key]
-
-    # Exact tag lookup first.
     for player in players.values():
         if normalize_player_name(player.get("tag", "")) == key:
             return player
-
     match = find_player_match(name)
     return match["player"] if match else None
 
@@ -262,7 +268,6 @@ def search_players(query):
     players = load_players()
     if not q:
         return []
-
     found = []
     for player in players.values():
         name = normalize_player_name(player.get("name", ""))
@@ -271,7 +276,6 @@ def search_players(query):
             found.append(player)
     if found:
         return found
-
     match = find_player_match(query)
     return [match["player"]] if match else []
 
