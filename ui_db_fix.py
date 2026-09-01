@@ -2,10 +2,11 @@ import discord
 
 from data import find_player_match, save_project
 from ui import ProjectView as BaseProjectView, project_embed
+from nickname_ui import NicknameTypeMixin
 
 
-class DBFixProjectView(BaseProjectView):
-    """Project UI with a manual DB typo-correction action."""
+class DBFixProjectView(NicknameTypeMixin, BaseProjectView):
+    """Project UI with manual DB typo correction and nickname-type selection."""
 
     @discord.ui.button(label="🔤 DB 오타 보정", style=discord.ButtonStyle.primary)
     async def db_typo_fix_button(self, interaction, button):
