@@ -15,6 +15,13 @@ source = re.sub(
 # command option names. Normalize the injected session command parameters.
 source = source.replace("세션ID", "session_id")
 
+# Replace the standard result view with the enhanced view. This keeps the
+# existing buttons while adding a manual DB-based typo-correction button.
+source = source.replace(
+    "from ui import ProjectView, project_embed",
+    "from ui import project_embed\nfrom ui_db_fix import DBFixProjectView as ProjectView",
+)
+
 # Use guild commands only for immediate availability. A command registered both
 # globally and for the current guild appears twice in Discord's slash-command UI.
 sync_handler = '''on_ready_replacement = \'\'\'@bot.event
