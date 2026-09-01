@@ -7,6 +7,7 @@ from ai import analyze_images
 from data import create_project, save_project, delete_project, load_config, save_config, add_player, remove_player, get_player, search_players, add_team, remove_team, get_team, search_teams, update_player_team, backup_databases
 from sheets import update_spreadsheet
 from ui import ProjectView, project_embed
+from player_analysis import enrich_project_identities, set_manual_game_nick, analyze_player, analyze_all_players
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -100,6 +101,10 @@ def apply_db_updates(project):
     return project["db_suggestion_result"]
 
 
+def get_current_project(channel_id):
+    return current_projects.get(channel_id)
+
+
 async def delete_result_later(message, delay=300):
     try:
         await asyncio.sleep(delay)
@@ -127,18 +132,24 @@ async def run_analysis(channel, state):
         project["teams"] = result.get("teams", [])
         canonicalize_teams(project)
         transfer_changes = canonicalize_players(project)
+        await status.edit(content="👤 **선수 닉네임을 확인하고 있습니다.**\nDB → bori.wiki 순서로 확인합니다.", embed=None, view=None)
+        identities = await asyncio.to_thread(enrich_project_identities, project, True)
         current_projects[channel.id] = project
+        save_project(project)
         suggestions = project.get("db_suggestions", {})
+        unresolved = sum(1 for item in identities.values() if not item.get("game_nick"))
         message = "📋 **분석 완료.**\n오류가 있으면 `✏️ 수정`으로 수정한 뒤 DB 반영 여부를 선택해 주세요."
         if suggestions.get("players"):
-            message += f"\n\n🆕 신규 선수 **{len(suggestions['players'])}명** 발견"
+            message += f"\n🆕 신규 선수 **{len(suggestions['players'])}명** 발견"
         if suggestions.get("teams"):
             message += f"\n🆕 신규 팀 **{len(suggestions['teams'])}개** 발견"
         if transfer_changes:
-            message += "\n🔄 **이적 의심**\n" + "\n".join(f"• **{c['name']}** {c.get('old_team') or '무소속'} → **{c['team']}**" for c in transfer_changes)
+            message += "\n🔄 **이적 의심** " + ", ".join(c["name"] for c in transfer_changes[:5])
+        if unresolved:
+            message += f"\n⚠️ 인게임 닉네임 확인 필요: **{unresolved}명**"
         await status.edit(content=message, embed=project_embed(project), view=ProjectView(project, save_project_to_sheet, apply_db_updates))
         asyncio.create_task(delete_result_later(status, 300))
-        print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장 / 신규선수 {len(suggestions.get('players', []))} / 신규팀 {len(suggestions.get('teams', []))} / 이적 {len(transfer_changes)}")
+        print(f"Gemini 분석 완료: {len(project['teams'])}개 팀 / 이미지 {len(images)}장 / 닉네임 미확인 {unresolved}명")
     except asyncio.CancelledError:
         return
     except Exception as e:
@@ -170,7 +181,7 @@ async def analysis_timeout(channel, state):
         else:
             analysis_waiting.pop(channel.id, None)
             status_message = state["status_message"]
-            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료되었습니다.**\n再 `/전력분석`을 사용해 주세요.", embed=None, view=None)
+            await status_message.edit(content="⏱️ **전력분석 모드가 자동으로 종료되었습니다.**\n다시 `/전력분석`을 사용해 주세요.", embed=None, view=None)
             await asyncio.sleep(3)
             try:
                 await status_message.delete()
@@ -187,15 +198,12 @@ async def on_ready():
     print(f"서버 수: {len(bot.guilds)} / 분석 채널: {len(analysis_channels)}개")
     print("=" * 50)
     try:
-        # 길드별 명령어만 사용해 중복 표시를 방지합니다.
-        # 이전에 등록된 전역 명령어가 있다면 한 번 제거합니다.
         bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
         for guild in bot.guilds:
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
             print(f"[{guild.name}] Slash Command {len(synced)}개 동기화 완료")
-            print("등록 명령어:", ", ".join(command.name for command in synced))
     except Exception as e:
         print(f"Slash Command 동기화 오류: {type(e).__name__}: {e}")
 
@@ -245,12 +253,65 @@ async def reset_analysis(interaction):
     state = analysis_waiting.pop(channel_id, None)
     if state:
         for key in ("timer_task", "debounce_task"):
-            if state.get(key):
-                state[key].cancel()
+            if state.get(key): state[key].cancel()
     project = current_projects.pop(channel_id, None)
-    if project:
-        delete_project(project["id"])
+    if project: delete_project(project["id"])
     await interaction.response.send_message("🧹 **현재 분석 데이터가 초기화되었습니다.**", delete_after=5)
+
+
+@bot.tree.command(name="인게임닉등록", description="대회 닉네임과 인게임 닉네임을 직접 연결합니다.")
+async def register_game_nick(interaction, 대회닉네임: str, 인게임닉네임: str):
+    project = get_current_project(interaction.channel_id)
+    if project:
+        set_manual_game_nick(project, 대회닉네임, 인게임닉네임)
+        save_project(project)
+    else:
+        from player_resolver import save_identity
+        save_identity(대회닉네임, 인게임닉네임, source="manual", confidence="high")
+    await interaction.response.send_message(f"🎮 **{대회닉네임} → {인게임닉네임}** 저장 완료. 다음부터 자동으로 사용합니다.", ephemeral=True)
+
+
+@bot.tree.command(name="선수전적", description="현재 분석의 선수 실험체 통계를 조회합니다. Top 1~10 선택 가능.")
+async def player_stats(interaction, 선수명: str, top: int = 3, 새로고침: bool = False):
+    if top < 1 or top > 10:
+        await interaction.response.send_message("❌ Top은 1~10 사이만 선택할 수 있습니다.", ephemeral=True)
+        return
+    project = get_current_project(interaction.channel_id)
+    if not project:
+        await interaction.response.send_message("❌ 현재 채널에 분석 결과가 없습니다. 먼저 `/전력분석`을 실행해 주세요.", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    result = await asyncio.to_thread(analyze_player, project, 선수명, top, 새로고침)
+    save_project(project)
+    if result.get("status") == "manual_required":
+        await interaction.followup.send(f"⚠️ **{선수명}**의 인게임 닉네임을 확인하지 못했습니다. `/인게임닉등록`으로 직접 등록해 주세요.", ephemeral=True)
+        return
+    if result.get("status") != "ok":
+        await interaction.followup.send(f"⚠️ **{선수명}** 전적을 자동으로 확인하지 못했습니다. DAK.GG 공개 페이지 구조 또는 접근 상태를 확인해야 합니다.", ephemeral=True)
+        return
+    lines = []
+    for idx, item in enumerate(result.get("characters", [])[:top], 1):
+        lines.append(f"{idx}. **{item['name']}** — {item['games']}경기 ({item.get('share', 0)}%)")
+    cache_text = "캐시 사용" if result.get("cached") else "새로 조회"
+    await interaction.followup.send(f"🎮 **{선수명}** → `{result.get('game_nick')}`\n📊 **장기 실험체 통계 Top {top}**\n" + "\n".join(lines) + f"\n\n출처: {result.get('source')} · {cache_text}\n범위: {result.get('scope')}", ephemeral=True)
+
+
+@bot.tree.command(name="전체전적분석", description="현재 분석의 모든 선수 실험체 통계를 조회합니다.")
+async def all_player_stats(interaction, top: int = 3, 새로고침: bool = False):
+    if top < 1 or top > 10:
+        await interaction.response.send_message("❌ Top은 1~10 사이만 선택할 수 있습니다.", ephemeral=True)
+        return
+    project = get_current_project(interaction.channel_id)
+    if not project:
+        await interaction.response.send_message("❌ 현재 채널에 분석 결과가 없습니다.", ephemeral=True)
+        return
+    await interaction.response.defer(thinking=True)
+    results = await asyncio.to_thread(analyze_all_players, project, top, 새로고침)
+    save_project(project)
+    success = sum(1 for r in results.values() if r.get("status") == "ok")
+    unresolved = sum(1 for r in results.values() if r.get("status") == "manual_required")
+    unavailable = len(results) - success - unresolved
+    await interaction.followup.send(f"📊 **전체 선수 전적 분석 완료**\n성공: **{success}명** · 닉네임 확인 필요: **{unresolved}명** · 조회 불가: **{unavailable}명**\n`/선수전적 선수명 top:10`으로 개별 상세 확인 가능")
 
 
 @bot.tree.command(name="선수등록", description="선수 DB에 선수를 등록합니다.")
