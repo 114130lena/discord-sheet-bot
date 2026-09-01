@@ -11,6 +11,11 @@ source = re.sub(
     source,
 )
 
+# Discord rejects uppercase/Korean Python parameter names when serializing slash
+# command option names. The production launcher injects several session commands
+# with the parameter named '세션ID', so normalize it before executing the launcher.
+source = source.replace("세션ID", "session_id")
+
 # Replace the production launcher's generated on_ready handler before it runs.
 # Do not clear the global tree: clearing it before sync removes decorated commands.
 sync_handler = '''on_ready_replacement = \'\'\'@bot.event
@@ -32,8 +37,6 @@ async def on_ready():
     except Exception as e:
         print(f"Slash Command 동기화 오류: {type(e).__name__}: {e}", flush=True)\'\'\''''
 
-# The source may contain either the original direct re.sub call or the callable
-# form above. Replace the whole generated handler assignment in one pass.
 handler_pattern = (
     r"on_ready_replacement = '''.*?'''\n"
     r"source = re\.sub\(on_ready_pattern, .*?\)"
